@@ -18,14 +18,12 @@ interp_satellite <- function(ut, flux, energy, time, sep = 1) {
                 ix <- sort(x, index.return = TRUE)$ix
                 x <- x[ix]
 
-                # TODO: finer control of time interval
-                if (max(diff(x)) <= sep) {
-                    flux_interp[imlt, imlat, ] <- approx(x = x, y = y1[ix], xout = time)$y
-                    energy_interp[imlt, imlat, ] <- approx(x = x, y = y2[ix], xout = time)$y
-                }
+                # TODO: control of time interval
+                flux_interp[imlt, imlat, ] <- approx(x = x, y = y1[ix], xout = time)$y
+                energy_interp[imlt, imlat, ] <- approx(x = x, y = y2[ix], xout = time)$y
             }
         }
     }
 
-    return (list(mlat = mlat, mlt = mlt, flux = flux_interp, energy = energy_interp))
+    return (list(flux = flux_interp, energy = energy_interp))
 }

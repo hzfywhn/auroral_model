@@ -9,6 +9,7 @@ source(file = "empirical.r")
 # adjustable parameters
 time <- seq(from = 0, to = 24, by = 4)
 ratio <- c(1, 1/6, 1/6, 1/36)
+NC <- 30
 nxy <- 101
 xy <- seq(from = -pi*2/9, to = pi*2/9, length.out = nxy)
 
@@ -31,8 +32,8 @@ nc_close(nc = nc)
 obs <- grid_satellite(mlat = mlat_sat, mlt = mlt_sat, ut = ut_sat, flux = flux_sat, energy = energy_sat, time = time)
 
 interp <- interp_satellite(ut = ut_sat, flux = flux_sat, energy = energy_sat, time = time)
-r2 <- pi/2 - interp$mlat * pi/180
-t2 <- interp$mlt * pi/12
+r2 <- pi/2 - mlat_sat * pi/180
+t2 <- mlt_sat * pi/12
 x2 <- r2 * cos(t2)
 y2 <- r2 * sin(t2)
 
@@ -44,18 +45,27 @@ hour <- (f$V2 - 51) * 24 + f$V3
 dFdt <- f$V6^(4/3) * sqrt(f$V4^2 + f$V5^2)^(2/3) * abs(sin(atan2(f$V4, f$V5)/2))^(8/3)
 dFdt <- approx(x = hour, y = dFdt, xout = time)$y
 emp <- empirical(doy = 51, dFdt, hemi = "N", premodel = "ovation/ovation-prime_2.3.0/premodel")
+# empirical data requires a lot preprocessing
+valid <- emp$mlat < 70
+emp$mlat <- emp$mlat[valid]
+emp$flux <- emp$flux[, , , valid]
+emp$energy <- emp$energy[, , , valid]
 coor <- expand.grid(emp$mlt * pi/12, pi/2 - emp$mlat * pi/180)
 t4 <- coor$Var1
 r4 <- coor$Var2
 x4 <- r4 * cos(t4)
 y4 <- r4 * sin(t4)
+# zero out empirical data for current use
+x4 <- 0
+y4 <- 0
 
-# deleted probabilistic boundary generation due to unnecessity and high cost
-# probably add back later in a low cost way
+# deleted probabilistic boundary generation due to high cost
+# add back later in a low cost way (circle Hough transform?)
 
+nt <- length(time)
 flux <- array(dim = c(nt, nxy, nxy))
 energy <- array(dim = c(nt, nxy, nxy))
-for (i in 1: length(time)) {
+for (i in 1: 1) {
     r1 <- pi/2 - obs[[i]]$mlat * pi/180
     t1 <- obs[[i]]$mlt * pi/12
     x1 <- r1 * cos(t1)
@@ -75,6 +85,9 @@ for (i in 1: length(time)) {
 
     f4 <- c(emp$flux[i, 1, , ])
     e4 <- c(emp$energy[i, 1, , ])
+    # zero out empirical data for current use
+    f4 <- 0
+    e4 <- 0
 
     x <- list(x1, x2, x3, x4)
     y <- list(y1, y2, y3, x4)
@@ -83,7 +96,7 @@ for (i in 1: length(time)) {
 
     # remove NA and 0
     for (j in 1: 4) {
-        valid <- f[[j]] > 0 & e[[j]] > 0
+        valid <- f[[j]] > 0  & e[[j]] > 0
         valid[is.na(valid)] <- FALSE
         x[[j]] <- x[[j]][valid]
         y[[j]] <- y[[j]][valid]
@@ -112,11 +125,11 @@ for (i in 1: length(time)) {
     # remove duplicate
     xyfe <- xyfe[!duplicated(xyfe[c("x", "y")]), ]
 
-    modelf <- LatticeKrig(x = xyfe[c("x", "y")], y = log(xyfe["f"]), nlevel = 1, NC = 50)
+    modelf <- LatticeKrig(x = xyfe[c("x", "y")], y = log(xyfe["f"]), nlevel = 1, NC = NC)
     predf <- predictSurface(object = modelf, grid.list = list(xy, xy))
     flux[i, , ] <- exp(predf$z)
 
-    modele <- LatticeKrig(x = xyfe[c("x", "y")], y = xyfe["e"], nlevel = 1, NC = 50)
+    modele <- LatticeKrig(x = xyfe[c("x", "y")], y = xyfe["e"], nlevel = 1, NC = NC)
     prede <- predictSurface(object = modele, grid.list = list(xy, xy))
     energy[i, , ] <- prede$z
 }

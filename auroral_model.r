@@ -5,9 +5,10 @@ source(file = "grid_satellite.r")
 source(file = "interp_satellite.r")
 source(file = "ground.r")
 source(file = "empirical.r")
+source(file = "auroral_boundary.r")
 
 # adjustable parameters
-time <- seq(from = 0, to = 24, by = 4)
+time <- seq(from = 0, to = 24, by = 1)
 ratio <- c(1, 1/6, 1/6, 1/36)
 NC <- 30
 nxy <- 101
@@ -59,8 +60,11 @@ y4 <- r4 * sin(t4)
 x4 <- 0
 y4 <- 0
 
-# deleted probabilistic boundary generation due to high cost
-# add back later in a low cost way (circle Hough transform?)
+bndry <- auroral_boundary(x = x2, y = y2, ut = ut_sat, flux = flux_sat, time = time, ub = 5, lb = 1,
+    a = seq(from = -pi/18, to = pi/18, length.out = 21),
+    b = seq(from = -pi/18, to = pi/18, length.out = 21),
+    r = seq(from = pi/18, to = 4*pi/18, length.out = 31))
+# center: bndry$am, bndry$bm; boundary: bndry$rmin, bndry$rmax
 
 nt <- length(time)
 flux <- array(dim = c(nt, nxy, nxy))

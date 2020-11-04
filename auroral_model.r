@@ -13,6 +13,9 @@ time <- seq(from = 0, to = 24, by = 1/2)
 ratio <- c(1, 1/6, 1/6, 1/36)
 delta <- pi/180
 xy <- seq(from = -pi*2/9, to = pi*2/9, by = delta*2)
+normalization <- TRUE
+rho <- 1
+derivative <- FALSE
 
 nc <- nc_open(filename = "ssusi/ssusi_combine_20140219_20140221.nc")
 mlat_sat <- ncvar_get(nc = nc, varid = "mlat")
@@ -135,19 +138,30 @@ for (it in 1: nt) {
 
     r <- pi/2 - loc[, 2] * pi/180
     t <- loc[, 1] * pi/180
+    # translate observation to auroral center
     loc <- cbind(r*cos(t) - bndry$am[it], r*sin(t) - bndry$bm[it])
-
     obsflux <- list(loc = loc, val = log(flux), err = rep(1, times = length(flux)))
     obsenergy <- list(loc = loc, val = energy, err = rep(1, times = length(energy)))
 
+    # translate simulation locations to auroral center
+    locsim_trans <- cbind(locsim[, 1] - bndry$am[it], locsim[, 2] - bndry$bm[it])
+
+
+    # basis function setup
+
+    # fill up full domain
     basisxy <- seq(from = -bndry$rmax[it], to = bndry$rmax[it], by = delta)
     nxy <- length(basisxy)
     coor <- expand.grid(basisxy, basisxy)
+
+    # select valid basis functions (within auroral boundaries)
     radius <- array(data = sqrt(coor[, 1]^2 + coor[, 2]^2), dim = c(nxy, nxy))
     valid <- radius >= bndry$rmin[it] & radius <= bndry$rmax[it]
+
     x <- array(dim = nxy^2)
     y <- array(dim = nxy^2)
     index <- array(dim = c(nxy, nxy))
+    # setup index matrix: mark index on valid basis function
     idx <- 1
     for (i in 1: nxy) {
         for (j in 1: nxy) {
@@ -159,10 +173,12 @@ for (it in 1: nt) {
             }
         }
     }
+
     m <- idx - 1
     x <- x[1: m]
     y <- y[1: m]
     connect <- array(dim = c(m, 4))
+    # construct connectivity matrix using index matrix
     idx <- 1
     for (i in 1: nxy) {
         for (j in 1: nxy) {
@@ -175,18 +191,26 @@ for (it in 1: nt) {
             }
         }
     }
+
     basis1 <- list(loc = cbind(x, y), connect = connect, centerweight = 4.01, delta = delta*2.5, alpha = 1)
+    # combine different levels, single level for now
     basis <- list(basis1)
 
-    locsim_trans <- cbind(locsim[, 1] - bndry$am[it], locsim[, 2] - bndry$bm[it])
+    con <- constants(obsflux, basis, normalization, rho, derivative)
+    lambda <- exp(optimize(
+        function(l) kriging(exp(l), con$y, con$W, con$Z, con$phi, con$Q)$likelihood,
+        interval = c(-10, 10), maximum = TRUE)$maximum)
+    fit <- kriging(lambda, con$y, con$W, con$Z, con$phi, con$Q)
+    pred <- prediction(loc, basis, normalization, rho, lambda, con$Z, con$phi, con$Q, fit$M, fit$d, fit$c, fit$rhoMLE)
+    fluxsim[it, , ] <- exp(pred$m)
 
-    modelflux <- LatticeKriging(obsflux, basis, NULL, 1, TRUE, 20)
-    predflux <- predictMean(locsim_trans, basis, NULL, 1, TRUE, modelflux$Qchol, modelflux$d, modelflux$c)
-    fluxsim[it, , ] <- exp(predflux)
-
-    modelenergy <- LatticeKriging(obsenergy, basis, NULL, 1, TRUE, 20)
-    predenergy <- predictMean(locsim_trans, basis, NULL, 1, TRUE, modelenergy$Qchol, modelenergy$d, modelenergy$c)
-    energysim[it, , ] <- predenergy
+    con <- constants(obsenergy, basis, normalization, rho, derivative)
+    lambda <- exp(optimize(
+        function(l) kriging(exp(l), con$y, con$W, con$Z, con$phi, con$Q)$likelihood,
+        interval = c(-10, 10), maximum = TRUE)$maximum)
+    fit <- kriging(lambda, con$y, con$W, con$Z, con$phi, con$Q)
+    pred <- prediction(loc, basis, normalization, rho, lambda, con$Z, con$phi, con$Q, fit$M, fit$d, fit$c, fit$rhoMLE)
+    energysim[it, , ] <- pred$m
 }
 
 dim_time <- ncdim_def(name = "time", units = "hours since 2014-02-20 00:00:00", vals = time)

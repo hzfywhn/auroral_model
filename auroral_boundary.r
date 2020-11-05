@@ -1,4 +1,4 @@
-auroral_boundary <- function(x, y, ut, flux, time, ub, lb, a, b, r) {
+auroral_boundary <- function(x, y, ut, flux, time, coverage, ub, lb, a, b, r) {
 
     nx <- nrow(x)
     ny <- ncol(y)
@@ -12,20 +12,14 @@ auroral_boundary <- function(x, y, ut, flux, time, ub, lb, a, b, r) {
     rub2 <- (r[nr] + (r[nr] - r[nr-1]) / 2)^2
 
     nt <- length(time)
-    am <- array(dim = c(nt))
-    bm <- array(dim = c(nt))
-    rmin2 <- array(dim = c(nt))
-    rmax2 <- array(dim = c(nt))
+    am <- array(dim = nt)
+    bm <- array(dim = nt)
+    rmin2 <- array(dim = nt)
+    rmax2 <- array(dim = nt)
 
     for (i in 1: nt) {
-        if (i == 1) t1 <- time[1] - (time[2] - time[1]) / 2
-        else t1 <- (time[i-1] + time[i]) / 2
-
-        if (i == nt) t2 <- time[nt] + (time[nt] - time[nt-1]) / 2
-        else t2 <- (time[i] + time[i+1]) / 2
-
         f <- flux
-        f[ut < t1 | ut > t2] <- NA
+        f[ut < time[i] - coverage | ut > time[i] + coverage] <- NA
         f <- rowMeans(f, na.rm = TRUE, dims = 2)
 
         aurora <- f >= ub

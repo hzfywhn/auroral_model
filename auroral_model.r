@@ -9,7 +9,8 @@ source(file = "LatticeKriging.r")
 
 # adjustable parameters
 doy <- 51
-time <- seq(from = 0, to = 24, by = 1/2)
+time <- seq(from = 0, to = 24, by = 1/6)
+coverage <- 1/2
 ratio <- c(1, 1/6, 1/6, 1/36)
 delta <- pi/180
 xy <- seq(from = -pi*2/9, to = pi*2/9, by = delta*2)
@@ -33,7 +34,7 @@ flux_grnd <- ncvar_get(nc = nc, varid = "flux")
 energy_grnd <- ncvar_get(nc = nc, varid = "energy") * 1e-3
 nc_close(nc = nc)
 
-obs <- grid_satellite(mlat = mlat_sat, mlt = mlt_sat, ut = ut_sat, flux = flux_sat, energy = energy_sat, time = time)
+obs <- grid_satellite(mlat = mlat_sat, mlt = mlt_sat, ut = ut_sat, flux = flux_sat, energy = energy_sat, time = time, coverage = coverage)
 
 interp <- interp_satellite(ut = ut_sat, flux = flux_sat, energy = energy_sat, time = time)
 lon2 <- mlt_sat * 15
@@ -63,7 +64,8 @@ r2 <- pi/2 - lat2 * pi/180
 t2 <- lon2 * pi/180
 x2 <- r2 * cos(t2)
 y2 <- r2 * sin(t2)
-bndry <- auroral_boundary(x = x2, y = y2, ut = ut_sat, flux = flux_sat, time = time, ub = 5, lb = 1,
+bndry <- auroral_boundary(x = x2, y = y2, ut = ut_sat, flux = flux_sat,
+    time = time, coverage = coverage, ub = 5, lb = 1,
     a = seq(from = -pi/18, to = pi/18, length.out = 21),
     b = seq(from = -pi/18, to = pi/18, length.out = 21),
     r = seq(from = pi/18, to = 4*pi/18, length.out = 31))

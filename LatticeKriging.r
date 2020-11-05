@@ -37,7 +37,8 @@ SAR <- function(basis) {
 }
 
 precision <- function(basis, rho) {
-    B <- spam(x = SAR(basis))
+    m <- nrow(basis$loc)
+    B <- spam(x = SAR(basis), nrow = m, ncol = m)
     Q <- t(B) %*% B / rho
     return (triplet(Q, tri=TRUE))
 }
@@ -130,8 +131,8 @@ combineMR <- function(loc, basis, derivative) {
     jQ <- jQ[1: (kQ-1)]
     Q <- Q[1: (kQ-1)]
 
-    phi <- spam(x = list(i = iphi, j = jphi, values = phi))
-    Q <- spam(x = list(i = iQ, j = jQ, values = Q))
+    phi <- spam(x = list(i = iphi, j = jphi, values = phi), nrow = nr, ncol = m)
+    Q <- spam(x = list(i = iQ, j = jQ, values = Q), nrow = m, ncol = m)
 
     return (list(phi = phi, Q = Q))
 }
@@ -251,11 +252,11 @@ if (FALSE) {
     # combine different levels
     basis <- list(basis1)
 
-    normalization <- TRUE
+    normalization <- FALSE
     rho <- 1
     derivative <- FALSE
-    # interval needs to be adjusted for specific purposes
     con <- constants(obs, basis, normalization, rho, derivative)
+    # interval needs to be adjusted for specific purposes
     lambda <- exp(optimize(
         function(l) kriging(exp(l), con$y, con$W, con$Z, con$phi, con$Q)$likelihood,
         interval = c(-12, -8), maximum = TRUE)$maximum)

@@ -149,7 +149,8 @@ constants <- function(obs, basis, normalization, rho, derivative) {
     Z <- covariate(obs$loc)
     if (derivative) {
         # extend covariate vector to length of obs
-        Z <- covariate(do.call(what = rbind, args = replicate(n = ncol(obs$loc), expr = obs$loc, simplify = FALSE)))
+        Z <- covariate(do.call(what = rbind,
+            args = replicate(n = ncol(obs$loc), expr = obs$loc, simplify = FALSE)))
     }
 
     MR <- combineMR(obs$loc, basis, derivative)
@@ -218,49 +219,61 @@ if (FALSE) {
     y2 <- 1
 
     # fake observation
-    delta <- 0.2
+    delta <- 0.1
     x0 <- seq(from = x1, to = x2, by = delta)
     y0 <- seq(from = y1, to = y2, by = delta)
-    loc <- data.matrix(frame = expand.grid(x0, y0))
+    loc <- expand.grid(x0, y0)
     x <- loc[, 1]
     y <- loc[, 2]
     z <- 1 / (1 + (x-1)^2 + y^2) - 1 / (1 + (x+1)^2 + y^2)
     vx <- -2*(x-1) / (1 + (x-1)^2 + y^2)^2 + 2*(x+1) / (1 + (x+1)^2 + y^2)^2
     vy <- -2*y / (1 + (x-1)^2 + y^2)^2 + 2*y / (1 + (x+1)^2 + y^2)^2
-    val <- z
-    obs <- list(loc = loc, val = val, err = array(data = 1, dim = length(val)))
+    obs <- list(loc = cbind(x, y), val = z, err = array(data = 1, dim = length(z)))
 
     # basis function
-    delta <- 0.5
+    delta <- 0.2
     x0 <- seq(from = x1, to = x2, by = delta)
     y0 <- seq(from = y1, to = y2, by = delta)
     nx <- length(x0)
     ny <- length(y0)
-    # constructing connectivity matrix is simple when the whole domain is filled
+    loc <- array(dim = c(nx*ny, 2))
     connect <- array(dim = c(nx*ny, 4))
-    for (i in 1: nx) {
-        for (j in 1: ny) {
-            idx <- (i-1)*ny + j
-            if (i >= 2) connect[idx, 1] <- (i-2)*ny + j
-            if (j >= 2) connect[idx, 2] <- (i-1)*ny + j-1
-            if (i <= nx-1) connect[idx, 3] <- i*ny + j
-            if (j <= ny-1) connect[idx, 4] <- (i-1)*ny + j+1
+    # column major order for comparison with original LatticeKrig package
+    for (j in 1: ny) {
+        for (i in 1: nx) {
+            idx <- (j-1)*nx + i
+            loc[idx, 2] <- y0[j]
+            loc[idx, 1] <- x0[i]
+            if (j >= 2) connect[idx, 1] <- (j-2)*nx + i
+            if (i >= 2) connect[idx, 2] <- (j-1)*nx + i-1
+            if (j <= ny-1) connect[idx, 3] <- j*nx + i
+            if (i <= nx-1) connect[idx, 4] <- (j-1)*nx + i+1
         }
     }
-    basis1 <- list(loc = data.matrix(frame = expand.grid(x0, y0)), connect = connect,
-        centerweight = 4.01, delta = delta*2.5, alpha = 1)
+    basis1 <- list(loc = loc, connect = connect, centerweight = 4.01, delta = delta*2.5, alpha = 1)
     # combine different levels
     basis <- list(basis1)
 
-    normalization <- FALSE
+    normalization <- TRUE
     rho <- 1
     derivative <- FALSE
     con <- constants(obs, basis, normalization, rho, derivative)
     # interval needs to be adjusted for specific purposes
     lambda <- exp(optimize(
         function(l) kriging(exp(l), con$y, con$W, con$Z, con$phi, con$Q)$likelihood,
-        interval = c(-12, -8), maximum = TRUE)$maximum)
+        interval = c(-9, 5), maximum = TRUE, tol = 5e-3)$maximum)
     fit <- kriging(lambda, con$y, con$W, con$Z, con$phi, con$Q)
-    pred <- prediction(loc, basis, normalization, rho, lambda, con$Z, con$phi, con$Q, fit$M, fit$d, fit$c, fit$rhoMLE)
-    cat(x, "\n", y, "\n", pred$m, "\n", z, file = "test.txt")
+    # lk <- LatticeKrig::LatticeKrig(x = obs$loc, y = obs$val, nlevel = 1,
+    #     NC = max(c(nx, ny)), NC.buffer = 0, normalize = normalization)
+
+    delta <- 0.1
+    x0 <- seq(from = x1, to = x2, by = delta)
+    y0 <- seq(from = y1, to = y2, by = delta)
+    loc <- expand.grid(x0, y0)
+    x <- loc[, 1]
+    y <- loc[, 2]
+    z <- 1 / (1 + (x-1)^2 + y^2) - 1 / (1 + (x+1)^2 + y^2)
+    pred <- prediction(cbind(x, y), basis, normalization, rho, lambda,
+        con$Z, con$phi, con$Q, fit$M, fit$d, fit$c, fit$rhoMLE)
+    # z and pred$m should be quite close
 }

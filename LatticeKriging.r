@@ -1,4 +1,4 @@
-# a simplified rewrite of the original LatticeKrig package on Cartesian geometry
+# a simplified rewrite of LatticeKrig package on Cartesian geometry
 
 library(package = "spam")
 
@@ -31,16 +31,9 @@ SAR <- function(basis) {
 
     ia <- ia[1: (k-1)]
     ja <- ja[1: (k-1)]
-    a <- a[1: (k-1)] / sqrt(basis$alpha)
+    a <- a[1: (k-1)]
 
     return (list(i = ia, j = ja, values = a))
-}
-
-precision <- function(basis, rho) {
-    m <- nrow(basis$loc)
-    B <- spam(x = SAR(basis), nrow = m, ncol = m)
-    Q <- t(B) %*% B / rho
-    return (triplet(Q, tri=TRUE))
 }
 
 regression <- function(loc, basis, derivative) {
@@ -86,7 +79,7 @@ regression <- function(loc, basis, derivative) {
     return (list(i = ia, j = ja, values = a))
 }
 
-combineMR <- function(loc, basis, derivative) {
+combineMR <- function(loc, basis, normalization, rho, derivative) {
     n <- nrow(loc)
     ndim <- ncol(loc)
     nlev <- length(basis)
@@ -94,73 +87,78 @@ combineMR <- function(loc, basis, derivative) {
     nr <- n
     if (derivative) nr <- ndim * n
 
-    m <- 0
-    for (ilev in 1: nlev) m <- m + nrow(basis[[ilev]]$loc)
+    m0 <- array(dim = nlev)
+    for (ilev in 1: nlev) m0[ilev] <- nrow(basis[[ilev]]$loc)
+    m1 <- cumsum(c(0, m0))
+    m <- m1[nlev+1]
+
+    iB <- array(dim = m^2)
+    jB <- array(dim = m^2)
+    B <- array(dim = m^2)
+    kB <- 1
 
     iphi <- array(dim = nr*m)
     jphi <- array(dim = nr*m)
     phi <- array(dim = nr*m)
     kphi <- 1
 
-    iQ <- array(dim = m^2)
-    jQ <- array(dim = m^2)
-    Q <- array(dim = m^2)
-    kQ <- 1
-
     for (ilev in 1: nlev) {
+        B0 <- SAR(basis[[ilev]])
         phi0 <- regression(loc, basis[[ilev]], derivative)
+
+        if (normalization) {
+            # don't understand how it is related to Sec 2.6
+            B1 <- spam(x = B0, nrow = m0[ilev], ncol = m0[ilev])
+            Q1 <- t(B1) %*% B1
+            phi1 <- spam(x = phi0, nrow = nr, ncol = m0[ilev])
+            normweight <- colSums(forwardsolve(chol(Q1), t(phi1))^2)
+            stopifnot(normweight != 0)
+            phi1 <- diag.spam(x = 1/sqrt(normweight)) %*% phi1
+            phi0 <- triplet(phi1, tri = TRUE)
+        }
+
+        k0 <- length(B0$values)
+        iB[kB: (kB+k0-1)] <- B0$i + m1[ilev]
+        jB[kB: (kB+k0-1)] <- B0$j + m1[ilev]
+        # this is different from Eq 11, there is a scaling factor in front
+        B[kB: (kB+k0-1)] <- B0$values
+        kB <- kB + k0
+
         k0 <- length(phi0$values)
         iphi[kphi: (kphi+k0-1)] <- phi0$i
-        jphi[kphi: (kphi+k0-1)] <- phi0$j
-        phi[kphi: (kphi+k0-1)] <- phi0$values
+        jphi[kphi: (kphi+k0-1)] <- phi0$j + m1[ilev]
+        # scaling factor of precision matrix moved here, not clear why
+        phi[kphi: (kphi+k0-1)] <- phi0$values * sqrt(basis[[ilev]]$alpha)
         kphi <- kphi + k0
-
-        Q0 <- precision(basis[[ilev]], rho)
-        k0 <- length(Q0$values)
-        iQ[kQ: (kQ+k0-1)] <- Q0$i
-        jQ[kQ: (kQ+k0-1)] <- Q0$j
-        Q[kQ: (kQ+k0-1)] <- Q0$values
-        kQ <- kQ + k0
     }
+
+    iB <- iB[1: (kB-1)]
+    jB <- jB[1: (kB-1)]
+    B <- B[1: (kB-1)]
 
     iphi <- iphi[1: (kphi-1)]
     jphi <- jphi[1: (kphi-1)]
-    phi <- phi[1: (kphi-1)]
+    # scaling factor of precision matrix moved here, not clear why
+    phi <- phi[1: (kphi-1)] * sqrt(rho)
 
-    iQ <- iQ[1: (kQ-1)]
-    jQ <- jQ[1: (kQ-1)]
-    Q <- Q[1: (kQ-1)]
-
+    B <- spam(x = list(i = iB, j = jB, values = B), nrow = m, ncol = m)
+    Q <- t(B) %*% B
     phi <- spam(x = list(i = iphi, j = jphi, values = phi), nrow = nr, ncol = m)
-    Q <- spam(x = list(i = iQ, j = jQ, values = Q), nrow = m, ncol = m)
 
-    return (list(phi = phi, Q = Q))
+    return (list(Q = Q, phi = phi))
 }
 
-covariate <- function(loc) cbind(1, loc)
-
-errorCov <- function(err) diag.spam(x = 1/err^2)
-
 constants <- function(obs, basis, normalization, rho, derivative) {
-    y <- c(obs$val)
-    W <- errorCov(c(obs$err))
-
     # concatenate vector observation into an array (x1 ... xn y1 ... yn ...)
-    Z <- covariate(obs$loc)
-    if (derivative) {
-        # extend covariate vector to length of obs
-        Z <- covariate(do.call(what = rbind,
-            args = replicate(n = ncol(obs$loc), expr = obs$loc, simplify = FALSE)))
-    }
+    y <- c(obs$val)
+    W <- diag.spam(x = 1/c(obs$err)^2)
 
-    MR <- combineMR(obs$loc, basis, derivative)
+    Z <- cbind(1, obs$loc)
+    # extend covariate vector to length of obs
+    if (derivative) Z <- cbind(1, do.call(what = rbind,
+        args = replicate(n = ncol(obs$loc), expr = obs$loc, simplify = FALSE)))
 
-    if (normalization) {
-        # still don't understand how it is related to Sec 2.6
-        normweight <- rho * colSums(forwardsolve(chol(MR$Q), t(MR$phi))^2)
-        stopifnot(normweight != 0)
-        MR$phi <- diag.spam(x = 1/sqrt(normweight)) %*% MR$phi
-    }
+    MR <- combineMR(obs$loc, basis, normalization, rho, derivative)
 
     return (c(list(y = y, W = W, Z = Z), MR))
 }
@@ -185,16 +183,13 @@ kriging <- function(lambda, y, W, Z, phi, Q) {
 
 prediction <- function(loc, basis, normalization, rho, lambda, Z, phi, Q, M, d, c, rhoMLE) {
     # no vector simulation for now
-    Z1 <- covariate(loc)
-    phi1 <- combineMR(loc, basis, FALSE)$phi
-
-    normweight <- rho * colSums(forwardsolve(chol(Q), t(phi1))^2)
-    stopifnot(normweight != 0)
-    if (normalization) phi1 <- diag.spam(x = 1/sqrt(normweight)) %*% phi1
+    Z1 <- cbind(1, loc)
+    phi1 <- combineMR(loc, basis, normalization, rho, FALSE)$phi
 
     m <- Z1 %*% d + phi1 %*% c
 
-    # standard deviation prediction is confusing with no reference found, need verification
+    # standard deviation prediction is confusing with no reference found
+    # don't trust for now, verification needed
     y1 <- phi %*% solve(Q, t(phi1))
     ZMZ <- t(Z) %*% solve(M, Z)
     d1 <- solve(ZMZ, t(Z)) %*% solve(M, y1)
@@ -202,9 +197,7 @@ prediction <- function(loc, basis, normalization, rho, lambda, Z, phi, Q, M, d, 
     c1 <- solve(Q, t(phi)) %*% solve(M, r1)
     residual <- y1 - Z %*% d1 - phi %*% c1
     joint <- colSums(t(Z1) * solve(ZMZ, t(Z1))) - 2 * colSums(t(Z1) * d1)
-    # seems like only diagonals of error covariance matrix is used in marginal variance calculation
-    # TODO: the second term left out error covariance
-    marginal <- normweight - colSums(y1 * residual) / lambda
+    marginal <- colSums(forwardsolve(chol(Q), t(phi1))^2) - colSums(y1 * residual) / lambda
     sd <- sqrt(rhoMLE * abs(joint + marginal))
 
     return (list(m = drop(m), sd = sd))
@@ -230,41 +223,63 @@ if (FALSE) {
     vy <- -2*y / (1 + (x-1)^2 + y^2)^2 + 2*y / (1 + (x+1)^2 + y^2)^2
     obs <- list(loc = cbind(x, y), val = z, err = array(data = 1, dim = length(z)))
 
-    # basis function
+    # basis set, column major order for comparison with original LatticeKrig package
+
     delta <- 0.2
     x0 <- seq(from = x1, to = x2, by = delta)
     y0 <- seq(from = y1, to = y2, by = delta)
     nx <- length(x0)
     ny <- length(y0)
+    NC <- max(c(nx, ny))
     loc <- array(dim = c(nx*ny, 2))
-    connect <- array(dim = c(nx*ny, 4))
-    # column major order for comparison with original LatticeKrig package
+    con <- array(dim = c(nx*ny, 4))
     for (j in 1: ny) {
         for (i in 1: nx) {
             idx <- (j-1)*nx + i
             loc[idx, 2] <- y0[j]
             loc[idx, 1] <- x0[i]
-            if (j >= 2) connect[idx, 1] <- (j-2)*nx + i
-            if (i >= 2) connect[idx, 2] <- (j-1)*nx + i-1
-            if (j <= ny-1) connect[idx, 3] <- j*nx + i
-            if (i <= nx-1) connect[idx, 4] <- (j-1)*nx + i+1
+            if (j >= 2) con[idx, 1] <- (j-2)*nx + i
+            if (i >= 2) con[idx, 2] <- (j-1)*nx + i-1
+            if (j <= ny-1) con[idx, 3] <- j*nx + i
+            if (i <= nx-1) con[idx, 4] <- (j-1)*nx + i+1
         }
     }
-    basis1 <- list(loc = loc, connect = connect, centerweight = 4.01, delta = delta*2.5, alpha = 1)
+    basis1 <- list(loc = loc, connect = con, centerweight = 4.01, delta = delta*2.5, alpha = 0.8)
+
+    delta <- 0.1
+    x0 <- seq(from = x1, to = x2, by = delta)
+    y0 <- seq(from = y1, to = y2, by = delta)
+    nx <- length(x0)
+    ny <- length(y0)
+    loc <- array(dim = c(nx*ny, 2))
+    con <- array(dim = c(nx*ny, 4))
+    for (j in 1: ny) {
+        for (i in 1: nx) {
+            idx <- (j-1)*nx + i
+            loc[idx, 2] <- y0[j]
+            loc[idx, 1] <- x0[i]
+            if (j >= 2) con[idx, 1] <- (j-2)*nx + i
+            if (i >= 2) con[idx, 2] <- (j-1)*nx + i-1
+            if (j <= ny-1) con[idx, 3] <- j*nx + i
+            if (i <= nx-1) con[idx, 4] <- (j-1)*nx + i+1
+        }
+    }
+    basis2 <- list(loc = loc, connect = con, centerweight = 4.01, delta = delta*2.5, alpha = 0.2)
+
     # combine different levels
-    basis <- list(basis1)
+    basis <- list(basis1, basis2)
 
     normalization <- TRUE
     rho <- 1
     derivative <- FALSE
-    con <- constants(obs, basis, normalization, rho, derivative)
+    cons <- constants(obs, basis, normalization, rho, derivative)
     # interval needs to be adjusted for specific purposes
     lambda <- exp(optimize(
-        function(l) kriging(exp(l), con$y, con$W, con$Z, con$phi, con$Q)$likelihood,
+        function(l) kriging(exp(l), cons$y, cons$W, cons$Z, cons$phi, cons$Q)$likelihood,
         interval = c(-9, 5), maximum = TRUE, tol = 5e-3)$maximum)
-    fit <- kriging(lambda, con$y, con$W, con$Z, con$phi, con$Q)
-    # lk <- LatticeKrig::LatticeKrig(x = obs$loc, y = obs$val, nlevel = 1,
-    #     NC = max(c(nx, ny)), NC.buffer = 0, normalize = normalization)
+    fit <- kriging(lambda, cons$y, cons$W, cons$Z, cons$phi, cons$Q)
+    # lk <- LatticeKrig::LatticeKrig(x = obs$loc, y = obs$val, nlevel = 2,
+    #     NC = NC, NC.buffer = 0, normalize = normalization)
 
     delta <- 0.1
     x0 <- seq(from = x1, to = x2, by = delta)
@@ -274,6 +289,6 @@ if (FALSE) {
     y <- loc[, 2]
     z <- 1 / (1 + (x-1)^2 + y^2) - 1 / (1 + (x+1)^2 + y^2)
     pred <- prediction(cbind(x, y), basis, normalization, rho, lambda,
-        con$Z, con$phi, con$Q, fit$M, fit$d, fit$c, fit$rhoMLE)
+        cons$Z, cons$phi, cons$Q, fit$M, fit$d, fit$c, fit$rhoMLE)
     # z and pred$m should be quite close
 }

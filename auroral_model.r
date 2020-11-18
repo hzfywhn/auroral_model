@@ -114,9 +114,6 @@ for (it in 1: nt) {
 
     flux4 <- c(emp$flux[it, 1, , ])
     energy4 <- c(emp$energy[it, 1, , ])
-    # zero out empirical data for current use
-    flux4 <- 0
-    energy4 <- 0
 
     lon <- list(lon1, lon2, lon3, lon4)
     lat <- list(lat1, lat2, lat3, lat4)

@@ -48,24 +48,45 @@ hour <- (f[, 2] - doy) * 24 + f[, 3]
 dFdt <- f[, 6]^(4/3) * sqrt(f[, 4]^2 + f[, 5]^2)^(2/3) * abs(sin(atan2(f[, 4], f[, 5])/2))^(8/3)
 dFdt <- approx(x = hour, y = dFdt, xout = time)$y
 emp <- empirical(doy = doy, dFdt, hemi = "N", premodel = "ovation/ovation-prime_2.3.0/premodel")
-# empirical data requires a lot preprocessing
-valid <- emp$mlat < 70
-emp$mlat <- emp$mlat[valid]
-emp$flux <- emp$flux[, , , valid]
-emp$energy <- emp$energy[, , , valid]
+
+# interpolate empirical data in mlt to be comparable with mlat resolution
+dmlt <- 1/30
+mlt_emp_0 <- c(emp$mlt, 24)
+mlt_emp_1 <- seq(from = 0, to = 24-dmlt, by = dmlt)
+nt <- length(time)
+ntype <- length(emp$type)
+nmlt_0 <- length(mlt_emp_0)
+nmlt_1 <- length(mlt_emp_1)
+nmlat <- length(emp$mlat)
+flux_emp_0 <- array(dim = c(nt, ntype, nmlt_0, nmlat))
+flux_emp_0[, , 1: (nmlt_0-1), ] <- emp$flux
+flux_emp_0[, , nmlt_0, ] <- emp$flux[, , 1, ]
+energy_emp_0 <- array(dim = c(nt, ntype, nmlt_0, nmlat))
+energy_emp_0[, , 1: (nmlt_0-1), ] <- emp$energy
+energy_emp_0[, , nmlt_0, ] <- emp$energy[, , 1, ]
+flux_emp_1 <- array(dim = c(nt, ntype, nmlt_1, nmlat))
+energy_emp_1 <- array(dim = c(nt, ntype, nmlt_1, nmlat))
+for (it in 1: nt) {
+    for (itype in 1: ntype) {
+        for (imlat in 1: nmlat) {
+            flux_emp_1[it, itype, , imlat] <- approx(x = mlt_emp_0, y = flux_emp_0[it, itype, , imlat], xout = mlt_emp_1)
+            energy_emp_1[it, itype, , imlat] <- approx(x = mlt_emp_0, y = energy_emp_0[it, itype, , imlat], xout = mlt_emp_1)
+        }
+    }
+}
+emp$mlt <- mlt_emp_1
+emp$flux <- flux_emp_1
+emp$energy <- energy_emp_1
+
 coor <- expand.grid(emp$mlt * 15, emp$mlat)
 lon4 <- coor[, 1]
 lat4 <- coor[, 2]
-# zero out empirical data for current use
-lon4 <- 0
-lat4 <- 0
 
 r2 <- pi/2 - lat2 * pi/180
 t2 <- lon2 * pi/180
 x2 <- r2 * cos(t2)
 y2 <- r2 * sin(t2)
-bndry <- auroral_boundary(x = x2, y = y2, ut = ut_sat, flux = flux_sat,
-    time = time, coverage = coverage, ub = 5, lb = 1,
+bndry <- auroral_boundary(x = x2, y = y2, ut = ut_sat, flux = flux_sat, time = time, coverage = coverage, ub = 5, lb = 1,
     a = seq(from = -pi/18, to = pi/18, length.out = 21),
     b = seq(from = -pi/18, to = pi/18, length.out = 21),
     r = seq(from = pi/18, to = 4*pi/18, length.out = 31))
@@ -179,39 +200,39 @@ for (it in 1: nt) {
     m <- idx - 1
     x <- x[1: m]
     y <- y[1: m]
-    connect <- array(dim = c(m, 4))
+    con <- array(dim = c(m, 4))
     # construct connectivity matrix using index matrix
     idx <- 1
     for (i in 1: nxy) {
         for (j in 1: nxy) {
             if (valid[i, j]) {
-                if (i >= 2 && valid[i-1, j]) connect[idx, 1] <- index[i-1, j]
-                if (j >= 2 && valid[i, j-1]) connect[idx, 2] <- index[i, j-1]
-                if (i <= nxy-1 && valid[i+1, j]) connect[idx, 3] <- index[i+1, j]
-                if (j <= nxy-1 && valid[i, j+1]) connect[idx, 4] <- index[i, j+1]
+                if (i >= 2 && valid[i-1, j]) con[idx, 1] <- index[i-1, j]
+                if (j >= 2 && valid[i, j-1]) con[idx, 2] <- index[i, j-1]
+                if (i <= nxy-1 && valid[i+1, j]) con[idx, 3] <- index[i+1, j]
+                if (j <= nxy-1 && valid[i, j+1]) con[idx, 4] <- index[i, j+1]
                 idx <- idx + 1
             }
         }
     }
 
-    basis1 <- list(loc = cbind(x, y), connect = connect, centerweight = 4.01, delta = delta*2.5, alpha = 1)
+    basis1 <- list(loc = cbind(x, y), connect = con, centerweight = 4.01, delta = delta*2.5, alpha = 1)
     # combine different levels, single level for now
     basis <- list(basis1)
 
-    con <- constants(obsflux, basis, normalization, rho, derivative)
+    cons <- constants(obsflux, basis, normalization, rho, derivative)
     lambda <- exp(optimize(
-        function(l) kriging(exp(l), con$y, con$W, con$Z, con$phi, con$Q)$likelihood,
-        interval = c(-10, 10), maximum = TRUE)$maximum)
-    fit <- kriging(lambda, con$y, con$W, con$Z, con$phi, con$Q)
-    pred <- prediction(loc, basis, normalization, rho, lambda, con$Z, con$phi, con$Q, fit$M, fit$d, fit$c, fit$rhoMLE)
+        function(l) kriging(exp(l), cons$y, cons$W, cons$Z, cons$Q, cons$phi)$likelihood,
+        interval = c(-9, 5), maximum = TRUE, tol = 5e-3)$maximum)
+    fit <- kriging(lambda, cons$y, cons$W, cons$Z, cons$Q, cons$phi)
+    pred <- prediction(locsim_trans, basis, normalization, rho, lambda, cons$Z, cons$Q, cons$phi, fit$M, fit$d, fit$c, fit$rhoMLE)
     fluxsim[it, , ] <- exp(pred$m)
 
-    con <- constants(obsenergy, basis, normalization, rho, derivative)
+    cons <- constants(obsenergy, basis, normalization, rho, derivative)
     lambda <- exp(optimize(
-        function(l) kriging(exp(l), con$y, con$W, con$Z, con$phi, con$Q)$likelihood,
-        interval = c(-10, 10), maximum = TRUE)$maximum)
-    fit <- kriging(lambda, con$y, con$W, con$Z, con$phi, con$Q)
-    pred <- prediction(loc, basis, normalization, rho, lambda, con$Z, con$phi, con$Q, fit$M, fit$d, fit$c, fit$rhoMLE)
+        function(l) kriging(exp(l), cons$y, cons$W, cons$Z, cons$Q, cons$phi)$likelihood,
+        interval = c(-9, 5), maximum = TRUE, tol = 5e-3)$maximum)
+    fit <- kriging(lambda, cons$y, cons$W, cons$Z, cons$Q, cons$phi)
+    pred <- prediction(locsim_trans, basis, normalization, rho, lambda, cons$Z, cons$Q, cons$phi, fit$M, fit$d, fit$c, fit$rhoMLE)
     energysim[it, , ] <- pred$m
 }
 

@@ -1,5 +1,4 @@
 auroral_boundary <- function(x, y, ut, flux, time, coverage, ub, lb, a, b, r) {
-
     nx <- nrow(x)
     ny <- ncol(y)
 

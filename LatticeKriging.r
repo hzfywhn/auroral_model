@@ -95,13 +95,13 @@ combineMR <- function(loc, basis, normalization, rho, derivative) {
     iB <- array(dim = m^2)
     jB <- array(dim = m^2)
     B <- array(dim = m^2)
-    kB <- 1
 
     iphi <- array(dim = nr*m)
     jphi <- array(dim = nr*m)
     phi <- array(dim = nr*m)
-    kphi <- 1
 
+    kB <- 1
+    kphi <- 1
     for (ilev in 1: nlev) {
         B0 <- SAR(basis[[ilev]])
         phi0 <- regression(loc, basis[[ilev]], derivative)
@@ -163,7 +163,7 @@ constants <- function(obs, basis, normalization, rho, derivative) {
     return (c(list(y = y, W = W, Z = Z), MR))
 }
 
-kriging <- function(lambda, y, W, Z, phi, Q) {
+kriging <- function(lambda, y, W, Z, Q, phi) {
     n <- length(y)
 
     # auxiliary matrix M_lambda
@@ -181,7 +181,7 @@ kriging <- function(lambda, y, W, Z, phi, Q) {
     return (list(d = drop(d), c = drop(c), rhoMLE = drop(rhoMLE), likelihood = drop(likelihood), M = M))
 }
 
-prediction <- function(loc, basis, normalization, rho, lambda, Z, phi, Q, M, d, c, rhoMLE) {
+prediction <- function(loc, basis, normalization, rho, lambda, Z, Q, phi, M, d, c, rhoMLE) {
     # no vector simulation for now
     Z1 <- cbind(1, loc)
     phi1 <- combineMR(loc, basis, normalization, rho, FALSE)$phi
@@ -275,9 +275,9 @@ if (FALSE) {
     cons <- constants(obs, basis, normalization, rho, derivative)
     # interval needs to be adjusted for specific purposes
     lambda <- exp(optimize(
-        function(l) kriging(exp(l), cons$y, cons$W, cons$Z, cons$phi, cons$Q)$likelihood,
+        function(l) kriging(exp(l), cons$y, cons$W, cons$Z, cons$Q, cons$phi)$likelihood,
         interval = c(-9, 5), maximum = TRUE, tol = 5e-3)$maximum)
-    fit <- kriging(lambda, cons$y, cons$W, cons$Z, cons$phi, cons$Q)
+    fit <- kriging(lambda, cons$y, cons$W, cons$Z, cons$Q, cons$phi)
     # lk <- LatticeKrig::LatticeKrig(x = obs$loc, y = obs$val, nlevel = 2,
     #     NC = NC, NC.buffer = 0, normalize = normalization)
 
@@ -289,6 +289,6 @@ if (FALSE) {
     y <- loc[, 2]
     z <- 1 / (1 + (x-1)^2 + y^2) - 1 / (1 + (x+1)^2 + y^2)
     pred <- prediction(cbind(x, y), basis, normalization, rho, lambda,
-        cons$Z, cons$phi, cons$Q, fit$M, fit$d, fit$c, fit$rhoMLE)
+        cons$Z, cons$Q, cons$phi, fit$M, fit$d, fit$c, fit$rhoMLE)
     # z and pred$m should be quite close
 }

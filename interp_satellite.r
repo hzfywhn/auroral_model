@@ -1,4 +1,4 @@
-interp_satellite <- function(ut, flux, energy, time, sep = 1) {
+interp_satellite <- function(ut, flux, energy, time) {
     nmlt <- length(ut[, 1, 1])
     nmlat <- length(ut[1, , 1])
     nt <- length(time)

@@ -1,4 +1,4 @@
-auroral_boundary <- function(x, y, ut, flux, time, coverage, ub, lb, a, b, r) {
+auroral_boundary <- function(x, y, flux, lb, a, b, r) {
     nx <- nrow(x)
     ny <- ncol(y)
 
@@ -10,18 +10,14 @@ auroral_boundary <- function(x, y, ut, flux, time, coverage, ub, lb, a, b, r) {
     rlb2 <- (r[1] - (r[2] - r[1]) / 2)^2
     rub2 <- (r[nr] + (r[nr] - r[nr-1]) / 2)^2
 
-    nt <- length(time)
+    nt <- length(flux[1, 1, ])
     am <- array(dim = nt)
     bm <- array(dim = nt)
     rmin2 <- array(dim = nt)
     rmax2 <- array(dim = nt)
 
-    for (i in 1: nt) {
-        f <- flux
-        f[ut < time[i] - coverage | ut > time[i] + coverage] <- NA
-        f <- rowMeans(f, na.rm = TRUE, dims = 2)
-
-        aurora <- f >= ub
+    for (it in 1: nt) {
+        aurora <- flux[, , it] >= lb
         aurora[is.na(aurora)] <- FALSE
         vote <- array(data = 0, dim = c(na, nb, nr))
 
@@ -42,14 +38,14 @@ auroral_boundary <- function(x, y, ut, flux, time, coverage, ub, lb, a, b, r) {
         }
 
         idx <- which(vote == max(vote), arr.ind = TRUE)
-        am[i] <- a[idx[1, 1]]
-        bm[i] <- b[idx[1, 2]]
+        am[it] <- a[idx[1, 1]]
+        bm[it] <- b[idx[1, 2]]
 
-        aur <- f >= lb
+        aur <- flux[, , it] > 0
         aur[is.na(aur)] <- FALSE
-        rm2 <- (x[aur] - am[i])**2 + (y[aur] - bm[i])**2
-        rmin2[i] <- min(rm2)
-        rmax2[i] <- max(rm2)
+        rm2 <- (x[aur] - am[it])**2 + (y[aur] - bm[it])**2
+        rmin2[it] <- min(rm2)
+        rmax2[it] <- max(rm2)
     }
 
     return (data.frame(am, bm, rmin = sqrt(rmin2), rmax = sqrt(rmax2)))

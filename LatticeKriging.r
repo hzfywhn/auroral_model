@@ -1,5 +1,6 @@
 # a simplified rewrite of LatticeKrig package on Cartesian geometry
 
+library(package = "rdist")
 library(package = "spam")
 
 SAR <- function(basis) {
@@ -36,56 +37,25 @@ SAR <- function(basis) {
     return (list(i = ia, j = ja, values = a))
 }
 
-regression <- function(loc, basis, derivative) {
-    n <- nrow(loc)
-    m <- nrow(basis$loc)
-    ndim <- ncol(loc)
-
-    nr <- n
-    if (derivative) nr <- ndim * n
-
-    ia <- array(dim = nr*m)
-    ja <- array(dim = nr*m)
-    a <- array(dim = nr*m)
-
-    k <- 1
-    for (i in 1: n) {
-        for (j in 1: m) {
-            displace <- loc[i, ] - basis$loc[j, ]
-            d <- norm(x = displace, type = "2") / basis$delta
-            if (d <= 1) {
-                if (derivative) {
-                    r <- -(1 - d)^5 * (5*d + 1) * 56/3 / basis$delta^2
-                    for (idim in 1: ndim) {
-                        ia[k] <- i + (idim-1)*n
-                        ja[k] <- j
-                        a[k] <- r * displace[idim]
-                        k <- k + 1
-                    }
-                } else {
-                    ia[k] <- i
-                    ja[k] <- j
-                    a[k] <- (1 - d)^6 * (35*d^2 + 18*d + 3) / 3
-                    k <- k + 1
-                }
-            }
-        }
+regression <- function(obs, basis, derivative) {
+    d <- cdist(obs$loc, basis$loc) / basis$delta
+    d[d > 1] <- NA
+    if (derivative) {
+        r1 <- replicate(n = nrow(basis$loc), expr = rowSums(obs$loc * obs$azim))
+        r2 <- obs$azim[, 1] %*% t(basis$loc[, 1])
+        for (idim in 2: ncol(obs$loc)) r2 <- r2 + obs$azim[, idim] %*% t(basis$loc[, idim])
+        phi <- -(1 - d)^5 * (5*d + 1) * 56/3 / basis$delta^2 * (r1 - r2)
+    } else {
+        phi <- (1 - d)^6 * (35*d^2 + 18*d + 3) / 3
     }
+    phi[is.na(phi)] <- 0
 
-    ia <- ia[1: (k-1)]
-    ja <- ja[1: (k-1)]
-    a <- a[1: (k-1)]
-
-    return (list(i = ia, j = ja, values = a))
+    return (triplet(as.spam(phi), tri = TRUE))
 }
 
-combineMR <- function(loc, basis, normalization, rho, derivative) {
-    n <- nrow(loc)
-    ndim <- ncol(loc)
+combineMR <- function(obs, basis, normalization, rho, derivative) {
+    n <- nrow(obs$loc)
     nlev <- length(basis)
-
-    nr <- n
-    if (derivative) nr <- ndim * n
 
     m0 <- array(dim = nlev)
     for (ilev in 1: nlev) m0[ilev] <- nrow(basis[[ilev]]$loc)
@@ -96,23 +66,23 @@ combineMR <- function(loc, basis, normalization, rho, derivative) {
     jB <- array(dim = m^2)
     B <- array(dim = m^2)
 
-    iphi <- array(dim = nr*m)
-    jphi <- array(dim = nr*m)
-    phi <- array(dim = nr*m)
+    iphi <- array(dim = n*m)
+    jphi <- array(dim = n*m)
+    phi <- array(dim = n*m)
 
     kB <- 1
     kphi <- 1
     for (ilev in 1: nlev) {
         B0 <- SAR(basis[[ilev]])
-        phi0 <- regression(loc, basis[[ilev]], derivative)
+        phi0 <- regression(obs, basis[[ilev]], derivative)
 
         if (normalization) {
             # don't understand how it is related to Sec 2.6
             B1 <- spam(x = B0, nrow = m0[ilev], ncol = m0[ilev])
             Q1 <- t(B1) %*% B1
-            phi1 <- spam(x = phi0, nrow = nr, ncol = m0[ilev])
+            phi1 <- spam(x = phi0, nrow = n, ncol = m0[ilev])
             normweight <- colSums(forwardsolve(chol(Q1), t(phi1))^2)
-            stopifnot(normweight != 0)
+            normweight[normweight == 0] <- 1
             phi1 <- diag.spam(x = 1/sqrt(normweight)) %*% phi1
             phi0 <- triplet(phi1, tri = TRUE)
         }
@@ -143,7 +113,7 @@ combineMR <- function(loc, basis, normalization, rho, derivative) {
 
     B <- spam(x = list(i = iB, j = jB, values = B), nrow = m, ncol = m)
     Q <- t(B) %*% B
-    phi <- spam(x = list(i = iphi, j = jphi, values = phi), nrow = nr, ncol = m)
+    phi <- spam(x = list(i = iphi, j = jphi, values = phi), nrow = n, ncol = m)
 
     return (list(Q = Q, phi = phi))
 }
@@ -152,13 +122,8 @@ constants <- function(obs, basis, normalization, rho, derivative) {
     # concatenate vector observation into an array (x1 ... xn y1 ... yn ...)
     y <- c(obs$val)
     W <- diag.spam(x = 1/c(obs$err)^2)
-
     Z <- cbind(1, obs$loc)
-    # extend covariate vector to length of obs
-    if (derivative) Z <- cbind(1, do.call(what = rbind,
-        args = replicate(n = ncol(obs$loc), expr = obs$loc, simplify = FALSE)))
-
-    MR <- combineMR(obs$loc, basis, normalization, rho, derivative)
+    MR <- combineMR(obs, basis, normalization, rho, derivative)
 
     return (c(list(y = y, W = W, Z = Z), MR))
 }
@@ -184,7 +149,7 @@ kriging <- function(lambda, y, W, Z, Q, phi) {
 prediction <- function(loc, basis, normalization, rho, lambda, Z, Q, phi, M, d, c, rhoMLE) {
     # no vector simulation for now
     Z1 <- cbind(1, loc)
-    phi1 <- combineMR(loc, basis, normalization, rho, FALSE)$phi
+    phi1 <- combineMR(list(loc = loc), basis, normalization, rho, FALSE)$phi
 
     m <- Z1 %*% d + phi1 %*% c
 
@@ -206,10 +171,10 @@ prediction <- function(loc, basis, normalization, rho, lambda, Z, Q, phi, M, d, 
 # codes below are for testing
 if (FALSE) {
     # testing domain
-    x1 <- -2
-    x2 <- 2
-    y1 <- -1
-    y2 <- 1
+    x1 <- -4
+    x2 <- 4
+    y1 <- -2
+    y2 <- 2
 
     # fake observation
     delta <- 0.1
@@ -221,9 +186,13 @@ if (FALSE) {
     z <- 1 / (1 + (x-1)^2 + y^2) - 1 / (1 + (x+1)^2 + y^2)
     vx <- -2*(x-1) / (1 + (x-1)^2 + y^2)^2 + 2*(x+1) / (1 + (x+1)^2 + y^2)^2
     vy <- -2*y / (1 + (x-1)^2 + y^2)^2 + 2*y / (1 + (x+1)^2 + y^2)^2
-    obs <- list(loc = cbind(x, y), val = z, err = array(data = 1, dim = length(z)))
+    v <- sqrt(vx^2 + vy^2)
+    cosx <- vx / v
+    cosy <- vy / v
+    obs <- list(loc = cbind(x, y), azim = cbind(cosx, cosy), val = v, err = array(data = 1, dim = length(v)))
 
     # basis set, column major order for comparison with original LatticeKrig package
+    basis <- vector(mode = "list", length = 1)
 
     delta <- 0.2
     x0 <- seq(from = x1, to = x2, by = delta)
@@ -244,34 +213,31 @@ if (FALSE) {
             if (i <= nx-1) con[idx, 4] <- (j-1)*nx + i+1
         }
     }
-    basis1 <- list(loc = loc, connect = con, centerweight = 4.01, delta = delta*2.5, alpha = 0.8)
+    basis[[1]] <- list(loc = loc, connect = con, centerweight = 4.01, delta = delta*2.5, alpha = 1)
 
-    delta <- 0.1
-    x0 <- seq(from = x1, to = x2, by = delta)
-    y0 <- seq(from = y1, to = y2, by = delta)
-    nx <- length(x0)
-    ny <- length(y0)
-    loc <- array(dim = c(nx*ny, 2))
-    con <- array(dim = c(nx*ny, 4))
-    for (j in 1: ny) {
-        for (i in 1: nx) {
-            idx <- (j-1)*nx + i
-            loc[idx, 2] <- y0[j]
-            loc[idx, 1] <- x0[i]
-            if (j >= 2) con[idx, 1] <- (j-2)*nx + i
-            if (i >= 2) con[idx, 2] <- (j-1)*nx + i-1
-            if (j <= ny-1) con[idx, 3] <- j*nx + i
-            if (i <= nx-1) con[idx, 4] <- (j-1)*nx + i+1
-        }
-    }
-    basis2 <- list(loc = loc, connect = con, centerweight = 4.01, delta = delta*2.5, alpha = 0.2)
+    # delta <- 0.1
+    # x0 <- seq(from = x1, to = x2, by = delta)
+    # y0 <- seq(from = y1, to = y2, by = delta)
+    # nx <- length(x0)
+    # ny <- length(y0)
+    # loc <- array(dim = c(nx*ny, 2))
+    # con <- array(dim = c(nx*ny, 4))
+    # for (j in 1: ny) {
+    #     for (i in 1: nx) {
+    #         idx <- (j-1)*nx + i
+    #         loc[idx, 2] <- y0[j]
+    #         loc[idx, 1] <- x0[i]
+    #         if (j >= 2) con[idx, 1] <- (j-2)*nx + i
+    #         if (i >= 2) con[idx, 2] <- (j-1)*nx + i-1
+    #         if (j <= ny-1) con[idx, 3] <- j*nx + i
+    #         if (i <= nx-1) con[idx, 4] <- (j-1)*nx + i+1
+    #     }
+    # }
+    # basis[[2]] <- list(loc = loc, connect = con, centerweight = 4.01, delta = delta*2.5, alpha = 0.2)
 
-    # combine different levels
-    basis <- list(basis1, basis2)
-
-    normalization <- TRUE
+    normalization <- FALSE
     rho <- 1
-    derivative <- FALSE
+    derivative <- TRUE
     cons <- constants(obs, basis, normalization, rho, derivative)
     # interval needs to be adjusted for specific purposes
     lambda <- exp(optimize(

@@ -1,6 +1,6 @@
-interp_satellite <- function(ut, flux, energy, time) {
-    nmlt <- length(ut[, 1, 1])
-    nmlat <- length(ut[1, , 1])
+interp_satellite <- function(ut, flux, energy, time, max_interval) {
+    nmlt <- nrow(ut)
+    nmlat <- ncol(ut)
     nt <- length(time)
     flux_interp <- array(dim = c(nmlt, nmlat, nt))
     energy_interp <- array(dim = c(nmlt, nmlat, nt))
@@ -18,9 +18,10 @@ interp_satellite <- function(ut, flux, energy, time) {
                 ix <- sort(x, index.return = TRUE)$ix
                 x <- x[ix]
 
-                # TODO: control of time interval
-                flux_interp[imlt, imlat, ] <- approx(x = x, y = y1[ix], xout = time)$y
-                energy_interp[imlt, imlat, ] <- approx(x = x, y = y2[ix], xout = time)$y
+                if (min(diff(x)) < max_interval) {
+                    flux_interp[imlt, imlat, ] <- approx(x = x, y = y1[ix], xout = time)$y
+                    energy_interp[imlt, imlat, ] <- approx(x = x, y = y2[ix], xout = time)$y
+                }
             }
         }
     }

@@ -1,152 +1,218 @@
 library(package = "ncdf4")
+library(package = "abind")
+library(package = "class")
+library(package = "alphahull")
+# library(package = "ggplot2")
 
 source(file = "grid_satellite.r")
 source(file = "interp_satellite.r")
 source(file = "ground.r")
 source(file = "empirical.r")
+source(file = "preprocess_empirical.r")
 source(file = "auroral_boundary.r")
+source(file = "setup_basis.r")
 source(file = "LatticeKriging.r")
 
 # adjustable parameters
+
 doy <- 51
-time <- seq(from = 0, to = 24, by = 1/6)
-coverage <- 1/2
-ratio <- c(1, 1/6, 1/6, 1/36)
-delta <- pi/180
-xy <- seq(from = -pi*2/9, to = pi*2/9, by = delta*2)
-normalization <- TRUE
-rho <- 1
-derivative <- FALSE
+hemi <- "N"
 
-nc <- nc_open(filename = "ssusi/ssusi_combine_20140219_20140221.nc")
-mlat_sat <- ncvar_get(nc = nc, varid = "mlat")
-mlt_sat <- ncvar_get(nc = nc, varid = "mlt")
-ut_sat <- ncvar_get(nc = nc, varid = "ut_n") - 24 # satellite data time offset
-flux_sat <- ncvar_get(nc = nc, varid = "flux_n")
-energy_sat <- ncvar_get(nc = nc, varid = "energy_n")
-nc_close(nc = nc)
+# ut to simulate (hour)
+time <- seq(from = 6, to = 11, by = 1/6)
 
-nc <- nc_open(filename = "themis/themis2014022006_mag.nc")
-time_grnd <- ncvar_get(nc = nc, varid = "time") / 60 + 6 # ground data time offset
-mlat_grnd <- ncvar_get(nc = nc, varid = "mlat")
-mlt_grnd <- ncvar_get(nc = nc, varid = "mlt")
-flux_grnd <- ncvar_get(nc = nc, varid = "flux")
-energy_grnd <- ncvar_get(nc = nc, varid = "energy") * 1e-3
-nc_close(nc = nc)
+# satellite data files
+filename_sat <- c("f16_20140220.nc", "f17_20140220.nc", "f18_20140220.nc")
 
-obs <- grid_satellite(mlat = mlat_sat, mlt = mlt_sat, ut = ut_sat, flux = flux_sat, energy = energy_sat, time = time, coverage = coverage)
+# time interval to gather satellite data to one time point (hour)
+coverage <- 1/4
 
-interp <- interp_satellite(ut = ut_sat, flux = flux_sat, energy = energy_sat, time = time)
-lon2 <- mlt_sat * 15
-lat2 <- mlat_sat
+# max time interval to do temporal interpolation
+max_interval <- 1
 
-grnd <- ground(timein = time_grnd, mlat = mlat_grnd, mlt = mlt_grnd, flux = flux_grnd, energy = energy_grnd, timeout = time)
+# ground data files
+filename_grnd <- "themis20140220.nc"
+
+# select ground data every 20 points
+subset_interval <- 20
+
+# select only diffuse aurora in empirical data
+aurtype <- 1
 
 # simplified dFdt calculation
 f <- read.table(file = "ovation/omni2.lst")
-hour <- (f[, 2] - doy) * 24 + f[, 3]
-dFdt <- f[, 6]^(4/3) * sqrt(f[, 4]^2 + f[, 5]^2)^(2/3) * abs(sin(atan2(f[, 4], f[, 5])/2))^(8/3)
-dFdt <- approx(x = hour, y = dFdt, xout = time)$y
-emp <- empirical(doy = doy, dFdt, hemi = "N", premodel = "ovation/ovation-prime_2.3.0/premodel")
+dFdt <- approx(x = (f[, 2] - doy) * 24 + f[, 3], y = f[, 6]^(4/3) * sqrt(f[, 4]^2 + f[, 5]^2)^(2/3) * abs(sin(atan2(f[, 4], f[, 5])/2))^(8/3), xout = time)$y
 
-# interpolate empirical data in mlt to be comparable with mlat resolution
-dmlt <- 1/30
-mlt_emp_0 <- c(emp$mlt, 24)
-mlt_emp_1 <- seq(from = 0, to = 24-dmlt, by = dmlt)
-nt <- length(time)
-ntype <- length(emp$type)
-nmlt_0 <- length(mlt_emp_0)
-nmlt_1 <- length(mlt_emp_1)
-nmlat <- length(emp$mlat)
-flux_emp_0 <- array(dim = c(nt, ntype, nmlt_0, nmlat))
-flux_emp_0[, , 1: (nmlt_0-1), ] <- emp$flux
-flux_emp_0[, , nmlt_0, ] <- emp$flux[, , 1, ]
-energy_emp_0 <- array(dim = c(nt, ntype, nmlt_0, nmlat))
-energy_emp_0[, , 1: (nmlt_0-1), ] <- emp$energy
-energy_emp_0[, , nmlt_0, ] <- emp$energy[, , 1, ]
-flux_emp_1 <- array(dim = c(nt, ntype, nmlt_1, nmlat))
-energy_emp_1 <- array(dim = c(nt, ntype, nmlt_1, nmlat))
-for (it in 1: nt) {
-    for (itype in 1: ntype) {
-        for (imlat in 1: nmlat) {
-            flux_emp_1[it, itype, , imlat] <- approx(x = mlt_emp_0, y = flux_emp_0[it, itype, , imlat], xout = mlt_emp_1)
-            energy_emp_1[it, itype, , imlat] <- approx(x = mlt_emp_0, y = energy_emp_0[it, itype, , imlat], xout = mlt_emp_1)
-        }
-    }
+# directory to hold coefficients
+premodel <- "ovation/ovation-prime_2.3.0/premodel"
+
+# interpolate empirical data to approximate equidistance in mlt and mlat
+mlt_emp <- seq(from = 0, to = 23.9, by = 0.1)
+mlat_emp <- seq(from = 50, to = 89, by = 1)
+
+# ratio of samples among satellite, interpolated satellite, ground and empirical data
+ratio <- c(1, 1/3, 1/3, 1/18)
+
+# downsampling method
+downsampling <- "random"
+
+# parameter for determining the region with observation
+alpha <- 0.2
+
+# parameters for auroral boundaries
+lb <- 1
+a <- seq(from = -pi/18, to = pi/18, by = pi/180)
+b <- seq(from = -pi/18, to = pi/18, by = pi/180)
+r <- seq(from = pi/18, to = 4*pi/18, by = pi/180)
+lev_flux <- c(0.5, 1)
+lev_energy <- c(1, 5)
+KN <- 10
+
+# modeling domain
+mlt_sim <- seq(from = 0, to = 23.9, by = 0.1)
+mlat_sim <- seq(from = 50, to = 89, by = 1)
+coor_sim <- expand.grid(mlt_sim * pi/12, pi/2 - mlat_sim*pi/180)
+loc_sim <- cbind(coor_sim[, 2] * cos(coor_sim[, 1]), coor_sim[, 2] * sin(coor_sim[, 1]))
+
+# parameters for Lattice Kriging
+delta <- pi/180
+centerweight <- 4.01
+overlap <- delta * 2.5
+weight <- 1
+normalization <- FALSE
+rho <- 1
+derivative <- FALSE
+
+# read satellite data
+nc <- nc_open(filename = filename_sat[1])
+mlat_sat <- ncvar_get(nc = nc, varid = "mlat")
+mlt_sat <- ncvar_get(nc = nc, varid = "mlt")
+ut_sat <- ncvar_get(nc = nc, varid = "ut_n")
+flux_sat <- ncvar_get(nc = nc, varid = "flux_n")
+energy_sat <- ncvar_get(nc = nc, varid = "energy_n")
+nc_close(nc = nc)
+for (ifile in 2: length(filename_sat)) {
+    nc <- nc_open(filename = filename_sat[ifile])
+    ut_sat <- abind(ut_sat, ncvar_get(nc = nc, varid = "ut_n"))
+    flux_sat <- abind(flux_sat, ncvar_get(nc = nc, varid = "flux_n"))
+    energy_sat <- abind(energy_sat, ncvar_get(nc = nc, varid = "energy_n"))
+    nc_close(nc = nc)
 }
-emp$mlt <- mlt_emp_1
-emp$flux <- flux_emp_1
-emp$energy <- energy_emp_1
+ut_sat <- aperm(ut_sat, perm = c(2, 1, 3))
+flux_sat <- aperm(flux_sat, perm = c(2, 1, 3))
+energy_sat <- aperm(energy_sat, perm = c(2, 1, 3))
 
-coor <- expand.grid(emp$mlt * 15, emp$mlat)
-lon4 <- coor[, 1]
-lat4 <- coor[, 2]
+# gather satellite data within certain time period
+sat <- grid_satellite(mlat_sat, mlt_sat, ut_sat, flux_sat, energy_sat, time, coverage)
 
-r2 <- pi/2 - lat2 * pi/180
-t2 <- lon2 * pi/180
-x2 <- r2 * cos(t2)
-y2 <- r2 * sin(t2)
-bndry <- auroral_boundary(x = x2, y = y2, ut = ut_sat, flux = flux_sat, time = time, coverage = coverage, ub = 5, lb = 1,
-    a = seq(from = -pi/18, to = pi/18, length.out = 21),
-    b = seq(from = -pi/18, to = pi/18, length.out = 21),
-    r = seq(from = pi/18, to = 4*pi/18, length.out = 31))
-# center: bndry$am, bndry$bm; boundary: bndry$rmin, bndry$rmax
+# interpolate satellite data to given time
+interp <- interp_satellite(ut_sat, flux_sat, energy_sat, time, max_interval)
+interp$mlt <- mlt_sat
+interp$mlat <- mlat_sat
+
+# read ground data
+nc <- nc_open(filename = filename_grnd)
+time_grnd <- ncvar_get(nc = nc, varid = "time") / 3600
+mlat_grnd <- ncvar_get(nc = nc, varid = "mlat")
+mlt_grnd <- ncvar_get(nc = nc, varid = "mlt")
+flux_grnd <- ncvar_get(nc = nc, varid = "flux")
+energy_grnd <- ncvar_get(nc = nc, varid = "energy")
+nc_close(nc = nc)
+
+# select ground data at given time
+grnd <- ground(time_grnd, mlat_grnd, mlt_grnd, flux_grnd, energy_grnd, time)
+
+# calculate empirical data with given dFdt
+emp <- empirical(doy, dFdt, hemi, premodel)
+
+# regrid empirical data to new grids and remove values in the common region with observations
+emp <- preprocess_empirical(emp, aurtype, mlt_emp, mlat_emp, interp, grnd, alpha)
+
+# coordinates for boundary calculation
+r_sat <- pi/2 - mlat_sat*pi/180
+t_sat <- mlt_sat * pi/12
+x_sat <- r_sat * cos(t_sat)
+y_sat <- r_sat * sin(t_sat)
 
 nt <- length(time)
-nxy <- length(xy)
-fluxsim <- array(dim = c(nt, nxy, nxy))
-energysim <- array(dim = c(nt, nxy, nxy))
-locsim <- expand.grid(xy, xy)
+nmlt_sim <- length(mlt_sim)
+nmlat_sim <- length(mlat_sim)
+
+# probabilistic boundary
+loc_sat <- cbind(c(x_sat), c(y_sat))
+nlev_flux <- length(lev_flux)
+nlev_energy <- length(lev_energy)
+prob_flux <- array(dim = c(nt, nmlt_sim*nmlat_sim))
+prob_energy <- array(dim = c(nt, nmlt_sim*nmlat_sim))
+for (it in 1: nt) {
+    flux_interp <- c(interp$flux[, , it])
+    valid <- flux_interp > 0
+    valid[is.na(valid)] <- FALSE
+    flux_interp <- flux_interp[valid]
+    cl_flux <- array(dim = length(flux_interp))
+    cl_flux[flux_interp < lev_flux[1]] <- 0
+    for (ilev in 1: (nlev_flux-1)) {
+        cl_flux[flux_interp >= lev_flux[ilev] & flux_interp < lev_flux[ilev+1]] <- ilev / nlev_flux
+    }
+    cl_flux[flux_interp >= lev_flux[nlev_flux]] <- 1
+    prob <- knn(train = loc_sat[valid, ], test = loc_sim, cl = cl_flux, k = KN, prob = TRUE)
+    prob_flux[it, ] <- attr(prob, "prob") #* as.numeric(levels(prob))[prob]
+
+    energy_interp <- c(interp$energy[, , it])
+    valid <- energy_interp > 0
+    valid[is.na(valid)] <- FALSE
+    energy_interp <- energy_interp[valid]
+    cl_energy <- array(dim = length(energy_interp))
+    cl_energy[energy_interp < lev_energy[1]] <- 0
+    for (ilev in 1: (nlev_energy-1)) {
+        cl_energy[energy_interp >= lev_energy[ilev] & energy_interp < lev_energy[ilev+1]] <- ilev / nlev_energy
+    }
+    cl_energy[energy_interp >= lev_energy[nlev_energy]] <- 1
+    prob <- knn(train = loc_sat[valid, ], test = loc_sim, cl = cl_energy, k = KN, prob = TRUE)
+    prob_energy[it, ] <- attr(prob, "prob") #* as.numeric(levels(prob))[prob]
+}
+
+# deterministic boundary: center (bndry$am, bndry$bm), boundary (bndry$rmin, bndry$rmax)
+bndry <- auroral_boundary(x_sat, y_sat, interp$flux, lb, a, b, r)
+
+# setup basis based on deterministic boundaries
+basis <- setup_basis(bndry, delta, centerweight, overlap, weight)
+
+flux_sim <- array(dim = c(nt, nmlt_sim, nmlat_sim))
+energy_sim <- array(dim = c(nt, nmlt_sim, nmlat_sim))
 
 for (it in 1: nt) {
-    lon1 <- obs[[it]]$mlt * 15
-    lat1 <- obs[[it]]$mlat
-    flux1 <- obs[[it]]$flux
-    energy1 <- obs[[it]]$energy
-
-    flux2 <- interp$flux[, , it]
-    energy2 <- interp$energy[, , it]
-
-    lon3 <- grnd$mlt[, , it] * 15
-    lat3 <- grnd$mlat[, , it]
-    flux3 <- grnd$flux[, , it]
-    energy3 <- grnd$energy[, , it]
-
-    flux4 <- c(emp$flux[it, 1, , ])
-    energy4 <- c(emp$energy[it, 1, , ])
-
-    lon <- list(lon1, lon2, lon3, lon4)
-    lat <- list(lat1, lat2, lat3, lat4)
-    flux <- list(flux1, flux2, flux3, flux4)
-    energy <- list(energy1, energy2, energy3, energy4)
+    print(it)
+    mlt <- list(sat[[it]]$mlt, interp$mlt, grnd$mlt[, , it], emp[[it]]$mlt)
+    mlat <- list(sat[[it]]$mlat, interp$mlat, grnd$mlat[, , it], emp[[it]]$mlat)
+    flux <- list(sat[[it]]$flux, interp$flux[, , it], grnd$flux[, , it], emp[[it]]$flux)
+    energy <- list(sat[[it]]$energy, interp$energy[, , it], grnd$energy[, , it], emp[[it]]$energy)
 
     # remove NA and 0
     for (j in 1: 4) {
         valid <- flux[[j]] > 0 & energy[[j]] > 0
         valid[is.na(valid)] <- FALSE
-        lon[[j]] <- lon[[j]][valid]
-        lat[[j]] <- lat[[j]][valid]
+        mlt[[j]] <- mlt[[j]][valid]
+        mlat[[j]] <- mlat[[j]][valid]
         flux[[j]] <- flux[[j]][valid]
         energy[[j]] <- energy[[j]][valid]
     }
 
     # downsampling
-    n1 <- length(lon[[1]])
+    n1 <- length(mlt[[1]])
     for (j in 2: 4) {
-        nj <- length(lon[[j]])
+        nj <- length(mlt[[j]])
         len <- as.integer(n1 * ratio[j])
 
-        # two ways of downsampling make no significant difference
-        # idx <- as.integer(seq(from = 1, to = nj, length.out = len))
-        idx <- sample(1: nj, size = min(len, nj))
-
-        lon[[j]] <- lon[[j]][idx]
-        lat[[j]] <- lat[[j]][idx]
+        # downsampling
+        idx <- switch (downsampling, sequential = as.integer(seq(from = 1, to = nj, length.out = len)), random = sample(1: nj, size = min(len, nj)))
+        mlt[[j]] <- mlt[[j]][idx]
+        mlat[[j]] <- mlat[[j]][idx]
         flux[[j]] <- flux[[j]][idx]
         energy[[j]] <- energy[[j]][idx]
     }
 
-    loc <- cbind(unlist(lon), unlist(lat))
+    loc <- cbind(unlist(mlt), unlist(mlat))
     flux <- unlist(flux)
     energy <- unlist(energy)
 
@@ -156,89 +222,44 @@ for (it in 1: nt) {
     flux <- flux[valid]
     energy <- energy[valid]
 
-    r <- pi/2 - loc[, 2] * pi/180
-    t <- loc[, 1] * pi/180
-    # translate observation to auroral center
-    loc <- cbind(r*cos(t) - bndry$am[it], r*sin(t) - bndry$bm[it])
-    obsflux <- list(loc = loc, val = log(flux), err = rep(1, times = length(flux)))
-    obsenergy <- list(loc = loc, val = energy, err = rep(1, times = length(energy)))
+    if (nrow(loc) <= 1) next
 
-    # translate simulation locations to auroral center
-    locsim_trans <- cbind(locsim[, 1] - bndry$am[it], locsim[, 2] - bndry$bm[it])
+    # reformat for simulation
+    r <- pi/2 - loc[, 2]*pi/180
+    t <- loc[, 1] * pi/12
+    loc <- cbind(r*cos(t), r*sin(t))
+    flux <- list(loc = loc, val = log(flux), err = rep(1, times = length(flux)))
+    energy <- list(loc = loc, val = energy, err = rep(1, times = length(energy)))
 
-
-    # basis function setup
-
-    # fill up full domain
-    basisxy <- seq(from = -bndry$rmax[it], to = bndry$rmax[it], by = delta)
-    nxy <- length(basisxy)
-    coor <- expand.grid(basisxy, basisxy)
-
-    # select valid basis functions (within auroral boundaries)
-    radius <- array(data = sqrt(coor[, 1]^2 + coor[, 2]^2), dim = c(nxy, nxy))
-    valid <- radius >= bndry$rmin[it] & radius <= bndry$rmax[it]
-
-    x <- array(dim = nxy^2)
-    y <- array(dim = nxy^2)
-    index <- array(dim = c(nxy, nxy))
-    # setup index matrix: mark index on valid basis function
-    idx <- 1
-    for (i in 1: nxy) {
-        for (j in 1: nxy) {
-            if (valid[i, j]) {
-                x[idx] <- basisxy[i]
-                y[idx] <- basisxy[j]
-                index[i, j] <- idx
-                idx <- idx + 1
-            }
-        }
-    }
-
-    m <- idx - 1
-    x <- x[1: m]
-    y <- y[1: m]
-    con <- array(dim = c(m, 4))
-    # construct connectivity matrix using index matrix
-    idx <- 1
-    for (i in 1: nxy) {
-        for (j in 1: nxy) {
-            if (valid[i, j]) {
-                if (i >= 2 && valid[i-1, j]) con[idx, 1] <- index[i-1, j]
-                if (j >= 2 && valid[i, j-1]) con[idx, 2] <- index[i, j-1]
-                if (i <= nxy-1 && valid[i+1, j]) con[idx, 3] <- index[i+1, j]
-                if (j <= nxy-1 && valid[i, j+1]) con[idx, 4] <- index[i, j+1]
-                idx <- idx + 1
-            }
-        }
-    }
-
-    basis1 <- list(loc = cbind(x, y), connect = con, centerweight = 4.01, delta = delta*2.5, alpha = 1)
-    # combine different levels, single level for now
-    basis <- list(basis1)
-
-    cons <- constants(obsflux, basis, normalization, rho, derivative)
+    cons <- constants(flux, basis[[it]], normalization, rho, derivative)
     lambda <- exp(optimize(
         function(l) kriging(exp(l), cons$y, cons$W, cons$Z, cons$Q, cons$phi)$likelihood,
         interval = c(-9, 5), maximum = TRUE, tol = 5e-3)$maximum)
     fit <- kriging(lambda, cons$y, cons$W, cons$Z, cons$Q, cons$phi)
-    pred <- prediction(locsim_trans, basis, normalization, rho, lambda, cons$Z, cons$Q, cons$phi, fit$M, fit$d, fit$c, fit$rhoMLE)
-    fluxsim[it, , ] <- exp(pred$m)
+    pred <- prediction(loc_sim, basis[[it]], normalization, rho, lambda, cons$Z, cons$Q, cons$phi, fit$M, fit$d, fit$c, fit$rhoMLE)
 
-    cons <- constants(obsenergy, basis, normalization, rho, derivative)
+    # ggplot(data = data.frame(x = loc[, 1], y = loc[, 2], c = flux$val)) + geom_point(mapping = aes(x, y, colour = c))
+    # ggplot(data = data.frame(x = loc_sim[, 1], y = loc_sim[, 2], c = pred$m)) + geom_point(mapping = aes(x, y, colour = c))
+    flux_sim[it, , ] <- array(data = exp(pred$m) * prob_flux[it, ], dim = c(nmlt_sim, nmlat_sim))
+
+    cons <- constants(energy, basis[[it]], normalization, rho, derivative)
     lambda <- exp(optimize(
         function(l) kriging(exp(l), cons$y, cons$W, cons$Z, cons$Q, cons$phi)$likelihood,
         interval = c(-9, 5), maximum = TRUE, tol = 5e-3)$maximum)
     fit <- kriging(lambda, cons$y, cons$W, cons$Z, cons$Q, cons$phi)
-    pred <- prediction(locsim_trans, basis, normalization, rho, lambda, cons$Z, cons$Q, cons$phi, fit$M, fit$d, fit$c, fit$rhoMLE)
-    energysim[it, , ] <- pred$m
+    pred <- prediction(loc_sim, basis[[it]], normalization, rho, lambda, cons$Z, cons$Q, cons$phi, fit$M, fit$d, fit$c, fit$rhoMLE)
+
+    # ggplot(data = data.frame(x = loc[, 1], y = loc[, 2], c = energy$val)) + geom_point(mapping = aes(x, y, colour = c))
+    # ggplot(data = data.frame(x = loc_sim[, 1], y = loc_sim[, 2], c = pred$m)) + geom_point(mapping = aes(x, y, colour = c))
+    energy_sim[it, , ] <- array(data = pred$m * prob_energy[it, ], dim = c(nmlt_sim, nmlat_sim))
 }
 
-dim_time <- ncdim_def(name = "time", units = "hours since 2014-02-20 00:00:00", vals = time)
-dim_x <- ncdim_def(name = "x", units = "", vals = xy)
-dim_y <- ncdim_def(name = "y", units = "", vals = xy)
-var_flux <- ncvar_def(name = "flux", units = "erg/g/cm2", dim = list(dim_time, dim_x, dim_y))
-var_energy <- ncvar_def(name = "energy", units = "keV", dim = list(dim_time, dim_x, dim_y))
+dim_time <- ncdim_def(name = "time", units = "", vals = time)
+dim_mlt <- ncdim_def(name = "mlt", units = "", vals = mlt_sim)
+dim_mlat <- ncdim_def(name = "mlat", units = "", vals = mlat_sim)
+var_flux <- ncvar_def(name = "flux", units = "", dim = list(dim_time, dim_mlt, dim_mlat))
+var_energy <- ncvar_def(name = "energy", units = "", dim = list(dim_time, dim_mlt, dim_mlat))
 nc <- nc_create(filename = "auroral_model.nc", vars = list(var_flux, var_energy), force_v4 = TRUE)
-ncvar_put(nc = nc, varid = var_flux, vals = fluxsim)
-ncvar_put(nc = nc, varid = var_energy, vals = energysim)
+ncvar_put(nc = nc, varid = var_flux, vals = flux_sim)
+ncvar_put(nc = nc, varid = var_energy, vals = energy_sim)
 nc_close(nc = nc)

@@ -4,9 +4,8 @@ grid_satellite <- function(mlat, mlt, ut, flux, energy, time, coverage) {
     mlt <- replicate(n = reps, expr = mlt)
 
     nt <- length(time)
-    gridded <- list()
+    gridded <- vector(mode = "list", length = nt)
 
-    # Low efficiency due to unfixed length of each data frame
     for (i in 1: nt) {
         mask <- ut > time[i] - coverage & ut < time[i] + coverage
         mask[is.na(mask)] = FALSE

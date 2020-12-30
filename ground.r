@@ -1,8 +1,8 @@
 ground <- function(timein, mlat, mlt, flux, energy, timeout) {
     ntin <- length(timein)
     ntout <- length(timeout)
-    nmlat <- length(mlat[1, , 1])
-    nmlt <- length(mlt[, 1, 1])
+    nmlat <- ncol(mlat)
+    nmlt <- nrow(mlt)
     mlatout <- array(dim = c(nmlt, nmlat, ntout))
     mltout <- array(dim = c(nmlt, nmlat, ntout))
     fluxout <- array(dim = c(nmlt, nmlat, ntout))

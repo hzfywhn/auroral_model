@@ -10,13 +10,13 @@ empirical <- function(doy, dFdt, hemi, premodel = "premodel") {
         if (doy < 79) {
             wt[2] <- 1 - (79 - doy) / 90
             wt[1] <- 1 - wt[2]
-        } else if (select_doy < 171) {
+        } else if (doy < 171) {
             wt[3] <- 1 - (171 - doy) / 92
             wt[2] <- 1 - wt[3]
-        } else if (select_doy < 263) {
+        } else if (doy < 263) {
             wt[4] <- 1 - (263 - doy) / 92
             wt[3] <- 1 - wt[4]
-        } else if (select_doy < 354) {
+        } else if (doy < 354) {
             wt[1] <- 1 - (354 - doy) / 91
             wt[4] <- 1 - wt[1]
         } else {

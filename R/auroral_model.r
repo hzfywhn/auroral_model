@@ -22,7 +22,7 @@ hemi <- "N"
 time <- seq(from = 6, to = 11, by = 1/6)
 
 # satellite data files
-filename_sat <- c("f16_20140220.nc", "f17_20140220.nc", "f18_20140220.nc")
+filename_sat <- c("../f16_20140220.nc", "../f17_20140220.nc", "../f18_20140220.nc")
 
 # time interval to gather satellite data to one time point (hour)
 coverage <- 1/4
@@ -31,7 +31,7 @@ coverage <- 1/4
 max_interval <- 1
 
 # ground data files
-filename_grnd <- "themis20140220.nc"
+filename_grnd <- "../themis20140220.nc"
 
 # select ground data every 20 points
 subset_interval <- 20
@@ -40,11 +40,11 @@ subset_interval <- 20
 aurtype <- 1
 
 # simplified dFdt calculation
-f <- read.table(file = "ovation/omni2.lst")
+f <- read.table(file = "../omni2.lst")
 dFdt <- approx(x = (f[, 2] - doy) * 24 + f[, 3], y = f[, 6]^(4/3) * sqrt(f[, 4]^2 + f[, 5]^2)^(2/3) * abs(sin(atan2(f[, 4], f[, 5])/2))^(8/3), xout = time)$y
 
 # directory to hold coefficients
-premodel <- "ovation/ovation-prime_2.3.0/premodel"
+premodel <- "../premodel"
 
 # interpolate empirical data to approximate equidistance in mlt and mlat
 mlt_emp <- seq(from = 0, to = 23.9, by = 0.1)
@@ -82,6 +82,8 @@ weight <- 1
 normalization <- FALSE
 rho <- 1
 derivative <- FALSE
+
+filename_output <- "auroral_model.nc"
 
 # read satellite data
 nc <- nc_open(filename = filename_sat[1])
@@ -149,26 +151,26 @@ for (it in 1: nt) {
     valid <- flux_interp > 0
     valid[is.na(valid)] <- FALSE
     flux_interp <- flux_interp[valid]
-    cl_flux <- array(dim = length(flux_interp))
-    cl_flux[flux_interp < lev_flux[1]] <- 0
+    label <- array(dim = length(flux_interp))
+    label[flux_interp < lev_flux[1]] <- 0
     for (ilev in 1: (nlev_flux-1)) {
-        cl_flux[flux_interp >= lev_flux[ilev] & flux_interp < lev_flux[ilev+1]] <- ilev / nlev_flux
+        label[flux_interp >= lev_flux[ilev] & flux_interp < lev_flux[ilev+1]] <- ilev / nlev_flux
     }
-    cl_flux[flux_interp >= lev_flux[nlev_flux]] <- 1
-    prob <- knn(train = loc_sat[valid, ], test = loc_sim, cl = cl_flux, k = KN, prob = TRUE)
+    label[flux_interp >= lev_flux[nlev_flux]] <- 1
+    prob <- knn(train = loc_sat[valid, ], test = loc_sim, cl = label, k = KN, prob = TRUE)
     prob_flux[it, ] <- attr(prob, "prob") #* as.numeric(levels(prob))[prob]
 
     energy_interp <- c(interp$energy[, , it])
     valid <- energy_interp > 0
     valid[is.na(valid)] <- FALSE
     energy_interp <- energy_interp[valid]
-    cl_energy <- array(dim = length(energy_interp))
-    cl_energy[energy_interp < lev_energy[1]] <- 0
+    label <- array(dim = length(energy_interp))
+    label[energy_interp < lev_energy[1]] <- 0
     for (ilev in 1: (nlev_energy-1)) {
-        cl_energy[energy_interp >= lev_energy[ilev] & energy_interp < lev_energy[ilev+1]] <- ilev / nlev_energy
+        label[energy_interp >= lev_energy[ilev] & energy_interp < lev_energy[ilev+1]] <- ilev / nlev_energy
     }
-    cl_energy[energy_interp >= lev_energy[nlev_energy]] <- 1
-    prob <- knn(train = loc_sat[valid, ], test = loc_sim, cl = cl_energy, k = KN, prob = TRUE)
+    label[energy_interp >= lev_energy[nlev_energy]] <- 1
+    prob <- knn(train = loc_sat[valid, ], test = loc_sim, cl = label, k = KN, prob = TRUE)
     prob_energy[it, ] <- attr(prob, "prob") #* as.numeric(levels(prob))[prob]
 }
 
@@ -259,7 +261,7 @@ dim_mlt <- ncdim_def(name = "mlt", units = "", vals = mlt_sim)
 dim_mlat <- ncdim_def(name = "mlat", units = "", vals = mlat_sim)
 var_flux <- ncvar_def(name = "flux", units = "", dim = list(dim_time, dim_mlt, dim_mlat))
 var_energy <- ncvar_def(name = "energy", units = "", dim = list(dim_time, dim_mlt, dim_mlat))
-nc <- nc_create(filename = "auroral_model.nc", vars = list(var_flux, var_energy), force_v4 = TRUE)
+nc <- nc_create(filename = filename_output, vars = list(var_flux, var_energy), force_v4 = TRUE)
 ncvar_put(nc = nc, varid = var_flux, vals = flux_sim)
 ncvar_put(nc = nc, varid = var_energy, vals = energy_sim)
 nc_close(nc = nc)

@@ -55,12 +55,12 @@ empirical <- function(doy, dFdt, hemi, premodel = "premodel") {
             energy_coeffs <- read.table(file = paste(premodel, "/", season[iszn], "_", type[itype], ".txt", sep = ""), skip = 1, nrows = nmlt*nmlat)
             number_coeffs <- read.table(file = paste(premodel, "/", season[iszn], "_", type[itype], "_n.txt", sep = ""), skip = 1, nrows = nmlt*nmlat)
             for (imlt in 1: nmlt) {
-                prob_coeff_1[iszn, itype, imlt, ] <- prob_coeffs$V1[((imlt-1)*nmlat + 1): (imlt*nmlat)]
-                prob_coeff_2[iszn, itype, imlt, ] <- prob_coeffs$V2[((imlt-1)*nmlat + 1): (imlt*nmlat)]
-                energy_coeff_1[iszn, itype, imlt, ] <- energy_coeffs$V3[((imlt-1)*nmlat + 1): (imlt*nmlat)]
-                energy_coeff_2[iszn, itype, imlt, ] <- energy_coeffs$V4[((imlt-1)*nmlat + 1): (imlt*nmlat)]
-                number_coeff_1[iszn, itype, imlt, ] <- number_coeffs$V3[((imlt-1)*nmlat + 1): (imlt*nmlat)]
-                number_coeff_2[iszn, itype, imlt, ] <- number_coeffs$V4[((imlt-1)*nmlat + 1): (imlt*nmlat)]
+                prob_coeff_1[iszn, itype, imlt, ] <- prob_coeffs[((imlt-1)*nmlat + 1): (imlt*nmlat), 1]
+                prob_coeff_2[iszn, itype, imlt, ] <- prob_coeffs[((imlt-1)*nmlat + 1): (imlt*nmlat), 2]
+                energy_coeff_1[iszn, itype, imlt, ] <- energy_coeffs[((imlt-1)*nmlat + 1): (imlt*nmlat), 3]
+                energy_coeff_2[iszn, itype, imlt, ] <- energy_coeffs[((imlt-1)*nmlat + 1): (imlt*nmlat), 4]
+                number_coeff_1[iszn, itype, imlt, ] <- number_coeffs[((imlt-1)*nmlat + 1): (imlt*nmlat), 3]
+                number_coeff_2[iszn, itype, imlt, ] <- number_coeffs[((imlt-1)*nmlat + 1): (imlt*nmlat), 4]
             }
         }
     }

@@ -1,4 +1,4 @@
-preprocess_empirical <- function(emp, aurtype, mlt_emp, mlat_emp, interp, grnd, alpha) {
+preprocess_empirical <- function(emp, aurtype, mlat_emp, mlt_emp, interp, grnd, alpha) {
     # keep only one type of aurora
     emp$flux <- emp$flux[, aurtype, , ]
     emp$energy <- emp$energy[, aurtype, , ]
@@ -46,9 +46,9 @@ preprocess_empirical <- function(emp, aurtype, mlt_emp, mlat_emp, interp, grnd, 
     emp$mlat <- array(data = coor[, 2], dim = c(nmlt, nmlat))
 
     # empirical data is valid only if it is out of the observation region
-    r <- pi/2 - c(emp$mlat)*pi/180
-    t <- c(emp$mlt) * pi/12
-    loc0 <- cbind(r * cos(t), r * sin(t))
+    r <- pi/2 - emp$mlat*pi/180
+    t <- emp$mlt * pi/12
+    loc0 <- cbind(c(r * cos(t)), c(r * sin(t)))
 
     emp_new <- vector(mode = "list", length = nt)
 

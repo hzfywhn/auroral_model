@@ -9,11 +9,11 @@ ground <- function(timein, mlat, mlt, flux, energy, timeout) {
     energyout <- array(dim = c(nmlt, nmlat, ntout))
 
     s <- 1
-    while (s <= ntout & timeout[s] < timein[1]) s <- s + 1
+    while (s <= ntout && timeout[s] < timein[1]) s <- s + 1
 
     j <- 1
     for (i in s: ntout) {
-        while (j <= ntin - 1 & timein[j + 1] <= timeout[i]) j <- j + 1
+        while (j <= ntin - 1 && timein[j + 1] <= timeout[i]) j <- j + 1
         if (j == ntin) break
         mlatout[, , i] <- mlat[, , j]
         mltout[, , i] <- mlt[, , j]

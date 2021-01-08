@@ -8,7 +8,7 @@ grid_satellite <- function(mlat, mlt, ut, flux, energy, time, coverage) {
 
     for (i in 1: nt) {
         mask <- ut > time[i] - coverage & ut < time[i] + coverage
-        mask[is.na(mask)] = FALSE
+        mask[is.na(mask)] <- FALSE
         gridded[[i]] <- data.frame(mlat = mlat[mask], mlt = mlt[mask], flux = flux[mask], energy = energy[mask])
     }
 

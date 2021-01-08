@@ -1,4 +1,4 @@
-preprocess_empirical <- function(emp, aurtype, mlat_emp, mlt_emp, interp, grnd, alpha) {
+preprocess_empirical <- function(emp, aurtype, mlat_emp, mlt_emp, interp, grnd, alphaRadius) {
     # keep only one type of aurora
     emp$flux <- emp$flux[, aurtype, , ]
     emp$energy <- emp$energy[, aurtype, , ]
@@ -51,17 +51,17 @@ preprocess_empirical <- function(emp, aurtype, mlat_emp, mlt_emp, interp, grnd, 
     loc0 <- cbind(c(r * cos(t)), c(r * sin(t)))
 
     emp_new <- vector(mode = "list", length = nt)
-
     for (it in 1: nt) {
-        valid_interp <- !is.na(interp$flux[, , it])
+        valid_interp <- interp$flux[, , it] > 0
+        valid_interp[is.na(valid_interp)] <- FALSE
         valid_grnd <- grnd$flux[, , it] > 0
+        valid_grnd[is.na(valid_grnd)] <- FALSE
         mlt_obs <- c(interp$mlt[valid_interp], grnd$mlt[, , it][valid_grnd])
         mlat_obs <- c(interp$mlat[valid_interp], grnd$mlat[, , it][valid_grnd])
-        loc_obs <- cbind(mlt_obs, mlat_obs)
-        loc_obs <- loc_obs[!duplicated(loc_obs), ]
+        loc_obs <- unique(cbind(mlt_obs, mlat_obs))
         r <- pi/2 - loc_obs[, 2]*pi/180
         t <- loc_obs[, 1] * pi/12
-        valid <- !inahull(ahull(x = r * cos(t), y = r * sin(t), alpha = alpha), loc0)
+        valid <- !inahull(ahull(x = r * cos(t), y = r * sin(t), alpha = alphaRadius), loc0)
         mlt <- atan2(loc0[valid, 2], loc0[valid, 1]) * 12/pi
         mlat <- 90 - sqrt(loc0[valid, 1]^2 + loc0[valid, 2]^2)*180/pi
         flux <- c(emp$flux[it, , ])[valid]

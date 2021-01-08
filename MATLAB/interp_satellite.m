@@ -1,8 +1,8 @@
 function [flux_interp, energy_interp] = interp_satellite(ut, flux, energy, time, max_interval)
     [nmlat, nmlt, ~] = size(ut);
     nt = length(time);
-    flux_interp = zeros(nmlat, nmlt, nt);
-    energy_interp = zeros(nmlat, nmlt, nt);
+    flux_interp = NaN(nmlat, nmlt, nt);
+    energy_interp = NaN(nmlat, nmlt, nt);
 
     for imlat = 1: nmlat
         for imlt = 1: nmlt

@@ -113,7 +113,7 @@ empirical <- function(doy, dFdt, hemi, premodel = "premodel") {
     # convert to energy flux and mean energy
     flux <- energy
     energy <- flux / number / 1.6e-9
-    energy[is.infinite(energy)] <- 0
+    energy[is.na(energy)] <- 0
 
     return (list(type = type, mlat = mlat, mlt = mlt, flux = flux, energy = energy))
 }

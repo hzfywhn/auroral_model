@@ -192,8 +192,6 @@ if (FALSE) {
     obs <- list(loc = cbind(x, y), azim = cbind(cosx, cosy), val = v, err = array(data = 1, dim = length(v)))
 
     # basis set, column major order for comparison with original LatticeKrig package
-    basis <- vector(mode = "list", length = 1)
-
     delta <- 0.2
     x0 <- seq(from = x1, to = x2, by = delta)
     y0 <- seq(from = y1, to = y2, by = delta)
@@ -213,27 +211,7 @@ if (FALSE) {
             if (i <= nx-1) con[idx, 4] <- (j-1)*nx + i+1
         }
     }
-    basis[[1]] <- list(loc = loc, connect = con, centerweight = 4.01, delta = delta*2.5, alpha = 1)
-
-    # delta <- 0.1
-    # x0 <- seq(from = x1, to = x2, by = delta)
-    # y0 <- seq(from = y1, to = y2, by = delta)
-    # nx <- length(x0)
-    # ny <- length(y0)
-    # loc <- array(dim = c(nx*ny, 2))
-    # con <- array(dim = c(nx*ny, 4))
-    # for (j in 1: ny) {
-    #     for (i in 1: nx) {
-    #         idx <- (j-1)*nx + i
-    #         loc[idx, 2] <- y0[j]
-    #         loc[idx, 1] <- x0[i]
-    #         if (j >= 2) con[idx, 1] <- (j-2)*nx + i
-    #         if (i >= 2) con[idx, 2] <- (j-1)*nx + i-1
-    #         if (j <= ny-1) con[idx, 3] <- j*nx + i
-    #         if (i <= nx-1) con[idx, 4] <- (j-1)*nx + i+1
-    #     }
-    # }
-    # basis[[2]] <- list(loc = loc, connect = con, centerweight = 4.01, delta = delta*2.5, alpha = 0.2)
+    basis <- list(list(loc = loc, connect = con, centerweight = 4.01, delta = delta*2.5, alpha = 1))
 
     normalization <- FALSE
     rho <- 1

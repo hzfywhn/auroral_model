@@ -51,6 +51,6 @@ function basis = setup_basis(am, bm, rmin, rmax, delta, centerweight, overlap, w
             end
         end
 
-        basis{it} = {struct('loc', [x(:)+am(it) y(:)+bm(it)], 'connect', con, 'centerweight', centerweight, 'delta', overlap, 'alpha', weight)};
+        basis{it} = {struct('loc', [x'+am(it) y'+bm(it)], 'connect', con, 'centerweight', centerweight, 'delta', overlap, 'alpha', weight)};
     end
 end

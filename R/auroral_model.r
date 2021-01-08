@@ -33,8 +33,9 @@ max_interval <- 1
 # ground data files
 filename_grnd <- "../themis20140220.nc"
 
-# select ground data every 20 points
-subset_interval <- 20
+# ground data thresholds
+flux_thres <- 15
+energy_thres <- 5
 
 # select only diffuse aurora in empirical data
 aurtype <- 1
@@ -51,13 +52,13 @@ mlt_emp <- seq(from = 0, to = 23.9, by = 0.1)
 mlat_emp <- seq(from = 50, to = 89, by = 1)
 
 # ratio of samples among satellite, interpolated satellite, ground and empirical data
-ratio <- c(1, 1/3, 1/3, 1/18)
+ratio <- c(1, 1/3, 1/3, 1/9)
 
 # downsampling method
 downsampling <- "random"
 
 # parameter for determining the region with observation
-alpha <- 0.2
+alphaRadius <- 0.2
 
 # parameters for auroral boundaries
 lb <- 1
@@ -73,6 +74,8 @@ mlt_sim <- seq(from = 0, to = 23.9, by = 0.1)
 mlat_sim <- seq(from = 50, to = 89, by = 1)
 coor_sim <- expand.grid(mlt_sim * pi/12, pi/2 - mlat_sim*pi/180)
 loc_sim <- cbind(coor_sim[, 2] * cos(coor_sim[, 1]), coor_sim[, 2] * sin(coor_sim[, 1]))
+
+min_data_points <- 50
 
 # parameters for Lattice Kriging
 delta <- pi/180
@@ -100,9 +103,6 @@ for (ifile in 2: length(filename_sat)) {
     energy_sat <- abind(energy_sat, ncvar_get(nc = nc, varid = "energy_n"))
     nc_close(nc = nc)
 }
-ut_sat <- aperm(ut_sat, perm = c(2, 1, 3))
-flux_sat <- aperm(flux_sat, perm = c(2, 1, 3))
-energy_sat <- aperm(energy_sat, perm = c(2, 1, 3))
 
 # gather satellite data within certain time period
 sat <- grid_satellite(mlat_sat, mlt_sat, ut_sat, flux_sat, energy_sat, time, coverage)
@@ -121,6 +121,9 @@ flux_grnd <- ncvar_get(nc = nc, varid = "flux")
 energy_grnd <- ncvar_get(nc = nc, varid = "energy")
 nc_close(nc = nc)
 
+flux_grnd[flux_grnd < flux_thres] <- NA
+energy_grnd[energy_grnd < energy_thres] <- NA
+
 # select ground data at given time
 grnd <- ground(time_grnd, mlat_grnd, mlt_grnd, flux_grnd, energy_grnd, time)
 
@@ -128,7 +131,7 @@ grnd <- ground(time_grnd, mlat_grnd, mlt_grnd, flux_grnd, energy_grnd, time)
 emp <- empirical(doy, dFdt, hemi, premodel)
 
 # regrid empirical data to new grids and remove values in the common region with observations
-emp <- preprocess_empirical(emp, aurtype, mlt_emp, mlat_emp, interp, grnd, alpha)
+emp <- preprocess_empirical(emp, aurtype, mlat_emp, mlt_emp, interp, grnd, alphaRadius)
 
 # coordinates for boundary calculation
 r_sat <- pi/2 - mlat_sat*pi/180
@@ -190,16 +193,6 @@ for (it in 1: nt) {
     flux <- list(sat[[it]]$flux, interp$flux[, , it], grnd$flux[, , it], emp[[it]]$flux)
     energy <- list(sat[[it]]$energy, interp$energy[, , it], grnd$energy[, , it], emp[[it]]$energy)
 
-    # remove NA and 0
-    for (j in 1: 4) {
-        valid <- flux[[j]] > 0 & energy[[j]] > 0
-        valid[is.na(valid)] <- FALSE
-        mlt[[j]] <- mlt[[j]][valid]
-        mlat[[j]] <- mlat[[j]][valid]
-        flux[[j]] <- flux[[j]][valid]
-        energy[[j]] <- energy[[j]][valid]
-    }
-
     # downsampling
     n1 <- length(mlt[[1]])
     for (j in 2: 4) {
@@ -214,6 +207,16 @@ for (it in 1: nt) {
         energy[[j]] <- energy[[j]][idx]
     }
 
+    # remove NA and 0
+    for (j in 1: 4) {
+        valid <- flux[[j]] > 0 & energy[[j]] > 0
+        valid[is.na(valid)] <- FALSE
+        mlt[[j]] <- mlt[[j]][valid]
+        mlat[[j]] <- mlat[[j]][valid]
+        flux[[j]] <- flux[[j]][valid]
+        energy[[j]] <- energy[[j]][valid]
+    }
+
     loc <- cbind(unlist(mlt), unlist(mlat))
     flux <- unlist(flux)
     energy <- unlist(energy)
@@ -224,7 +227,7 @@ for (it in 1: nt) {
     flux <- flux[valid]
     energy <- energy[valid]
 
-    if (nrow(loc) <= 1) next
+    if (nrow(loc) <= min_data_points) next
 
     # reformat for simulation
     r <- pi/2 - loc[, 2]*pi/180

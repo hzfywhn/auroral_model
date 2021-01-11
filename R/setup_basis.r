@@ -1,16 +1,19 @@
-setup_basis <- function(bndry, delta, centerweight, overlap, weight) {
+setup_basis <- function(bndry, sponge, delta, centerweight, overlap, weight) {
     nt <- length(bndry$rmax)
     basis <- vector(mode = "list", length = nt)
 
     for (it in 1: nt) {
+        inner <- bndry$rmin[it] - sponge
+        if (inner < 0) inner <- 0
+        outer <- bndry$rmax[it] + sponge
         # fill up full domain
-        xy <- seq(from = -bndry$rmax[it], to = bndry$rmax[it], by = delta)
+        xy <- seq(from = -outer, to = outer, by = delta)
         nxy <- length(xy)
         coor <- expand.grid(xy, xy)
 
         # select valid basis functions (within auroral boundaries)
         radius2 <- array(data = coor[, 1]^2 + coor[, 2]^2, dim = c(nxy, nxy))
-        valid <- radius2 >= bndry$rmin[it]^2 & radius2 <= bndry$rmax[it]^2
+        valid <- radius2 >= inner^2 & radius2 <= outer^2
 
         x <- array(dim = nxy^2)
         y <- array(dim = nxy^2)

@@ -19,7 +19,7 @@ doy <- 51
 hemi <- "N"
 
 # ut to simulate (hour)
-time <- seq(from = 6, to = 11, by = 1/6)
+time <- seq(from = 6, to = 12, by = 1/3)
 
 # satellite data files
 filename_sat <- c("../f16_20140220.nc", "../f17_20140220.nc", "../f18_20140220.nc")
@@ -34,8 +34,8 @@ max_interval <- 1
 filename_grnd <- "../themis20140220.nc"
 
 # ground data thresholds
-flux_thres <- 15
-energy_thres <- 5
+flux_thres <- c(0.1, 200)
+energy_thres <- c(0.1, 50)
 
 # select only diffuse aurora in empirical data
 aurtype <- 1
@@ -78,6 +78,7 @@ loc_sim <- cbind(coor_sim[, 2] * cos(coor_sim[, 1]), coor_sim[, 2] * sin(coor_si
 min_data_points <- 50
 
 # parameters for Lattice Kriging
+sponge <- pi/18
 delta <- pi/180
 centerweight <- 4.01
 overlap <- delta * 2.5
@@ -121,8 +122,8 @@ flux_grnd <- ncvar_get(nc = nc, varid = "flux")
 energy_grnd <- ncvar_get(nc = nc, varid = "energy")
 nc_close(nc = nc)
 
-flux_grnd[flux_grnd < flux_thres] <- NA
-energy_grnd[energy_grnd < energy_thres] <- NA
+flux_grnd[flux_grnd < flux_thres[1] | flux_grnd > flux_thres[2]] <- NA
+energy_grnd[energy_grnd < energy_thres[1] | energy_grnd > energy_thres[2]] <- NA
 
 # select ground data at given time
 grnd <- ground(time_grnd, mlat_grnd, mlt_grnd, flux_grnd, energy_grnd, time)
@@ -181,7 +182,7 @@ for (it in 1: nt) {
 bndry <- auroral_boundary(x_sat, y_sat, interp$flux, lb, a, b, r)
 
 # setup basis based on deterministic boundaries
-basis <- setup_basis(bndry, delta, centerweight, overlap, weight)
+basis <- setup_basis(bndry, sponge, delta, centerweight, overlap, weight)
 
 flux_sim <- array(dim = c(nt, nmlt_sim, nmlat_sim))
 energy_sim <- array(dim = c(nt, nmlt_sim, nmlat_sim))
@@ -234,7 +235,7 @@ for (it in 1: nt) {
     t <- loc[, 1] * pi/12
     loc <- cbind(r*cos(t), r*sin(t))
     flux <- list(loc = loc, val = log(flux), err = rep(1, times = length(flux)))
-    energy <- list(loc = loc, val = energy, err = rep(1, times = length(energy)))
+    energy <- list(loc = loc, val = log(energy), err = rep(1, times = length(energy)))
 
     cons <- constants(flux, basis[[it]], normalization, rho, derivative)
     lambda <- exp(optimize(
@@ -256,7 +257,7 @@ for (it in 1: nt) {
 
     # ggplot(data = data.frame(x = loc[, 1], y = loc[, 2], c = energy$val)) + geom_point(mapping = aes(x, y, colour = c))
     # ggplot(data = data.frame(x = loc_sim[, 1], y = loc_sim[, 2], c = pred$m)) + geom_point(mapping = aes(x, y, colour = c))
-    energy_sim[it, , ] <- array(data = pred$m * prob_energy[it, ], dim = c(nmlt_sim, nmlat_sim))
+    energy_sim[it, , ] <- array(data = exp(pred$m) * prob_energy[it, ], dim = c(nmlt_sim, nmlat_sim))
 }
 
 dim_time <- ncdim_def(name = "time", units = "", vals = time)

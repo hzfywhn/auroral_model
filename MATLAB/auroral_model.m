@@ -1,14 +1,14 @@
 doy = 51;
 hemi = 'N';
-time = 6: 1/6: 11;
+time = 6: 1/3: 12;
 
 filename_sat = {'../f16_20140220.nc', '../f17_20140220.nc', '../f18_20140220.nc'};
 coverage = 1/4;
 max_interval = 1;
 
 filename_grnd = '../themis20140220.nc';
-flux_thres = 15;
-energy_thres = 5;
+flux_thres = [0.1 200];
+energy_thres = [0.1 50];
 
 aurtype = 1;
 f = readmatrix('../omni2.lst', 'FileType', 'text');
@@ -38,6 +38,7 @@ x_sim = r_sim .* cos(t_sim);
 y_sim = r_sim .* sin(t_sim);
 loc_sim = [x_sim(:) y_sim(:)];
 
+sponge = pi/18;
 delta = pi/180;
 centerweight = 4.01;
 overlap = delta * 4.5;
@@ -69,8 +70,8 @@ mlt_grnd = ncread(filename_grnd, 'mlt');
 flux_grnd = ncread(filename_grnd, 'flux');
 energy_grnd = ncread(filename_grnd, 'energy');
 
-flux_grnd(flux_grnd < flux_thres) = NaN;
-energy_grnd(energy_grnd < energy_thres) = NaN;
+flux_grnd(flux_grnd < flux_thres(1) | flux_grnd > flux_thres(2)) = NaN;
+energy_grnd(energy_grnd < energy_thres(1) | energy_grnd > energy_thres(2)) = NaN;
 
 [grnd_mlat, grnd_mlt, grnd_flux, grnd_energy] = ground(time_grnd, mlat_grnd, mlt_grnd, flux_grnd, energy_grnd, time);
 
@@ -119,7 +120,7 @@ end
 
 [am, bm, rmin, rmax] = auroral_boundary(x_sat, y_sat, interp_flux, lb, a, b, r);
 
-basis = setup_basis(am, bm, rmin, rmax, delta, centerweight, overlap, weight);
+basis = setup_basis(am, bm, rmin, rmax, sponge, delta, centerweight, overlap, weight);
 
 flux_sim = zeros(nt, nmlt_sim, nmlat_sim);
 energy_sim = zeros(nt, nmlt_sim, nmlat_sim);
@@ -133,7 +134,7 @@ for it = 1: nt
 
     n1 = length(mlt{1});
     for j = 2: 4
-        nj = length(mlt{j});
+        nj = numel(mlt{j});
         len = min(nj, round(n1 * ratio(j)));
 
         switch downsampling
@@ -172,8 +173,8 @@ for it = 1: nt
     r = pi/2 - deg2rad(loc(:, 2));
     t = loc(:, 1) * pi/12;
     loc = [r.*cos(t) r.*sin(t)];
-    flux = struct('loc', double(loc), 'val', double(log(flux)), 'err', ones(1, length(flux))');
-    energy = struct('loc', double(loc), 'val', double(energy), 'err', ones(1, length(energy))');
+    flux = struct('loc', loc, 'val', log(flux), 'err', ones(length(flux), 1));
+    energy = struct('loc', loc, 'val', log(energy), 'err', ones(length(energy), 1));
 
     [y, W, Z, Q, phi] = constants(flux, basis{it}, normalization, rho, derivation);
     lambda = optimize(y, W, Z, Q, phi, exp(-9), exp(5), 5e-3);
@@ -185,7 +186,7 @@ for it = 1: nt
     lambda = optimize(y, W, Z, Q, phi, exp(-9), exp(5), 5e-3);
     [d, c, rhoMLE, ~, M] = kriging(lambda, y, W, Z, Q, phi);
     [m, ~] = prediction(loc_sim, basis{it}, normalization, rho, lambda, Z, Q, phi, M, d, c, rhoMLE);
-    energy_sim(it, :, :) = reshape(m.*prob_energy(it,:)', nmlt_sim, nmlat_sim);
+    energy_sim(it, :, :) = reshape(exp(m).*prob_energy(it,:)', nmlt_sim, nmlat_sim);
 end
 
 nccreate(filename_output, 'time', 'Dimensions', {'time', nt}, 'Datatype', 'single', 'Format', 'netcdf4')

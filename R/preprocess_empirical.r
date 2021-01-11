@@ -52,8 +52,7 @@ preprocess_empirical <- function(emp, aurtype, mlat_emp, mlt_emp, interp, grnd, 
 
     emp_new <- vector(mode = "list", length = nt)
     for (it in 1: nt) {
-        valid_interp <- interp$flux[, , it] > 0
-        valid_interp[is.na(valid_interp)] <- FALSE
+        valid_interp <- !is.na(interp$flux[, , it])
         valid_grnd <- grnd$flux[, , it] > 0
         valid_grnd[is.na(valid_grnd)] <- FALSE
         mlt_obs <- c(interp$mlt[valid_interp], grnd$mlt[, , it][valid_grnd])

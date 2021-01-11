@@ -1,14 +1,19 @@
-function basis = setup_basis(am, bm, rmin, rmax, delta, centerweight, overlap, weight)
+function basis = setup_basis(am, bm, rmin, rmax, sponge, delta, centerweight, overlap, weight)
     nt = length(rmax);
     basis = cell(1, nt);
 
     for it = 1: nt
-        xy = -rmax(it): delta: rmax(it);
+        inner = rmin(it) - sponge;
+        if inner < 0
+            inner = 0;
+        end
+        outer = rmax(it) + sponge;
+        xy = -outer: delta: outer;
         nxy = length(xy);
         [x, y] = meshgrid(xy, xy);
 
         radius2 = x.^2 + y.^2;
-        valid = radius2 >= rmin(it)^2 & radius2 <= rmax(it)^2;
+        valid = radius2 >= inner^2 & radius2 <= outer^2;
 
         x = zeros(1, nxy^2);
         y = zeros(1, nxy^2);

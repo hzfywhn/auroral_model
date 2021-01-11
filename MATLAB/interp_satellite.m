@@ -13,14 +13,10 @@ function [flux_interp, energy_interp] = interp_satellite(ut, flux, energy, time,
             x = x(valid);
             y1 = y1(valid);
             y2 = y2(valid);
-            if length(x) >= 2
-                [~, ix] = sort(x);
-                x = x(ix);
-
-                if min(diff(x)) < max_interval
-                    flux_interp(imlat, imlt, :) = interp1(x, y1(ix), time);
-                    energy_interp(imlat, imlt, :) = interp1(x, y2(ix), time);
-                end
+            [x, uniq, ~] = unique(x);
+            if length(x) >= 2 && min(diff(x)) < max_interval
+                flux_interp(imlat, imlt, :) = interp1(x, y1(uniq), time);
+                energy_interp(imlat, imlt, :) = interp1(x, y2(uniq), time);
             end
         end
     end

@@ -31,7 +31,7 @@ function emp_new = preprocess_empirical(emp_mlat, emp_mlt, emp_flux, emp_energy,
 
     emp_new = cell(1, nt);
     for it = 1: nt
-        valid_interp = interp_flux(:, :, it) > 0;
+        valid_interp = ~isnan(interp_flux(:, :, it));
         valid_grnd = grnd_flux(:, :, it) > 0;
         grnd_mlt_i = grnd_mlt(:, :, it);
         grnd_mlat_i = grnd_mlat(:, :, it);

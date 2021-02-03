@@ -1,14 +1,12 @@
 doy = 51;
 hemi = 'N';
-time = 6: 1/3: 12;
+time = 6: 1/4: 12;
 
 filename_sat = {'../f16_20140220.nc', '../f17_20140220.nc', '../f18_20140220.nc'};
 coverage = 1/4;
 max_interval = 1;
 
 filename_grnd = '../themis20140220.nc';
-flux_thres = [0.1 200];
-energy_thres = [0.1 50];
 
 aurtype = 1;
 f = readmatrix('../omni2.lst', 'FileType', 'text');
@@ -25,8 +23,8 @@ lb = 1;
 a = -pi/18: pi/180: pi/18;
 b = -pi/18: pi/180: pi/18;
 r = pi/18: pi/180: 4*pi/18;
-lev_flux = [0.5 1];
-lev_energy = [1 5];
+thres_flux = 1;
+thres_energy = 1;
 KN = 10;
 
 min_data_points = 50;
@@ -45,7 +43,7 @@ overlap = delta * 4.5;
 weight = 1;
 normalization = false;
 rho = 1;
-derivation = false;
+derivative = false;
 
 filename_output = 'auroral_model.nc';
 
@@ -70,8 +68,8 @@ mlt_grnd = ncread(filename_grnd, 'mlt');
 flux_grnd = ncread(filename_grnd, 'flux');
 energy_grnd = ncread(filename_grnd, 'energy');
 
-flux_grnd(flux_grnd < flux_thres(1) | flux_grnd > flux_thres(2)) = NaN;
-energy_grnd(energy_grnd < energy_thres(1) | energy_grnd > energy_thres(2)) = NaN;
+flux_grnd(flux_grnd == 0) = NaN;
+energy_grnd(energy_grnd == 0) = NaN;
 
 [grnd_mlat, grnd_mlt, grnd_flux, grnd_energy] = ground(time_grnd, mlat_grnd, mlt_grnd, flux_grnd, energy_grnd, time);
 
@@ -84,38 +82,32 @@ t_sat = mlt_sat * pi/12;
 x_sat = r_sat .* cos(t_sat);
 y_sat = r_sat .* sin(t_sat);
 
+r_grnd = pi/2 - deg2rad(grnd_mlat);
+t_grnd = grnd_mlt * pi/12;
+x_grnd = r_grnd .* cos(t_grnd);
+y_grnd = r_grnd .* sin(t_grnd);
+
 nt = length(time);
 nmlt_sim = length(mlt_sim);
 nmlat_sim = length(mlat_sim);
 
-nlev_flux = length(lev_flux);
-nlev_energy = length(lev_energy);
-label_flux = linspace(0, 1, nlev_flux+1);
-label_energy = linspace(0, 1, nlev_energy+1);
 prob_flux = zeros(nt, nmlt_sim*nmlat_sim);
 prob_energy = zeros(nt, nmlt_sim*nmlat_sim);
 for it = 1: nt
-    flux_interp = interp_flux(:, :, it);
-    valid = flux_interp > 0;
-    flux_interp = flux_interp(valid);
-    label = zeros(1, length(flux_interp));
-    for ilev = 1: nlev_flux-1
-        label(flux_interp >= lev_flux(ilev) & flux_interp < lev_flux(ilev+1)) = label_flux(ilev+1);
-    end
-    label(flux_interp >= lev_flux(nlev_flux)) = 1;
-    [~, score, ~] = predict(fitcknn([x_sat(valid) y_sat(valid)], label, 'NumNeighbors', KN), loc_sim);
-    prob_flux(it, :) = score * label_flux';
+    x_grnd_i = x_grnd(:, :, it);
+    y_grnd_i = y_grnd(:, :, it);
 
-    energy_interp = interp_energy(:, :, it);
-    valid = energy_interp > 0;
-    energy_interp = energy_interp(valid);
-    label = zeros(1, length(energy_interp));
-    for ilev = 1: nlev_flux-1
-        label(energy_interp >= lev_energy(ilev) & energy_interp < lev_energy(ilev+1)) = label_energy(ilev+1);
-    end
-    label(energy_interp >= lev_energy(nlev_energy)) = 1;
-    [~, score, ~] = predict(fitcknn([x_sat(valid) y_sat(valid)], label, 'NumNeighbors', KN), loc_sim);
-    prob_energy(it, :) = score * label_energy';
+    valid_interp = interp_flux(:, :, it) > thres_flux;
+    flux_grnd_i = flux_grnd(:, :, it);
+    valid = ~isnan(flux_grnd_i);
+    [~, score, ~] = predict(fitcknn([x_sat(:) y_sat(:); x_grnd_i(valid) y_grnd_i(valid)], [valid_interp(:); flux_grnd_i(valid) > thres_flux], 'NumNeighbors', KN), loc_sim);
+    prob_flux(it, :) = score * [0; 1];
+
+    valid_interp = interp_energy(:, :, it) > thres_flux;
+    energy_grnd_i = energy_grnd(:, :, it);
+    valid = ~isnan(energy_grnd_i);
+    [~, score, ~] = predict(fitcknn([x_sat(:) y_sat(:); x_grnd_i(valid) y_grnd_i(valid)], [valid_interp(:); energy_grnd_i(valid) > thres_energy], 'NumNeighbors', KN), loc_sim);
+    prob_energy(it, :) = score * [0; 1];
 end
 
 [am, bm, rmin, rmax] = auroral_boundary(x_sat, y_sat, interp_flux, lb, a, b, r);
@@ -150,21 +142,21 @@ for it = 1: nt
     end
 
     for j = 1: 4
-        valid = flux{j} > 0 & energy{j} > 0;
-        mlt{j} = mlt{j}(valid);
-        mlat{j} = mlat{j}(valid);
-        flux{j} = flux{j}(valid);
-        energy{j} = energy{j}(valid);
+        valid_interp = flux{j} > 0 & energy{j} > 0;
+        mlt{j} = mlt{j}(valid_interp);
+        mlat{j} = mlat{j}(valid_interp);
+        flux{j} = flux{j}(valid_interp);
+        energy{j} = energy{j}(valid_interp);
     end
 
     loc = [cat(1, mlt{:}) cat(1, mlat{:})];
     flux = cat(1, flux{:});
     energy = cat(1, energy{:});
 
-    [~, valid, ~] = unique(loc, 'rows');
-    loc = loc(valid, :);
-    flux = flux(valid);
-    energy = energy(valid);
+    [~, valid_interp, ~] = unique(loc, 'rows');
+    loc = loc(valid_interp, :);
+    flux = flux(valid_interp);
+    energy = energy(valid_interp);
 
     if size(loc, 1) <= min_data_points
         continue
@@ -176,13 +168,21 @@ for it = 1: nt
     flux = struct('loc', loc, 'val', log(flux), 'err', ones(length(flux), 1));
     energy = struct('loc', loc, 'val', log(energy), 'err', ones(length(energy), 1));
 
-    [y, W, Z, Q, phi] = constants(flux, basis{it}, normalization, rho, derivation);
+    y = flux.val;
+    ind = 1: size(flux.val, 1);
+    W = sparse(ind, ind, flux.err);
+    Z = [ones(size(flux.loc, 1), 1) flux.loc];
+    [Q, phi] = combineMR(flux, basis{it}, normalization, rho, derivative);
     lambda = optimize(y, W, Z, Q, phi, exp(-9), exp(5), 5e-3);
     [d, c, rhoMLE, ~, M] = kriging(lambda, y, W, Z, Q, phi);
     [m, ~] = prediction(loc_sim, basis{it}, normalization, rho, lambda, Z, Q, phi, M, d, c, rhoMLE);
     flux_sim(it, :, :) = reshape(exp(m).*prob_flux(it,:)', nmlt_sim, nmlat_sim);
 
-    [y, W, Z, Q, phi] = constants(energy, basis{it}, normalization, rho, derivation);
+    y = energy.val;
+    ind = 1: size(energy.val, 1);
+    W = sparse(ind, ind, energy.err);
+    Z = [ones(size(energy.loc, 1), 1) energy.loc];
+    [Q, phi] = combineMR(energy, basis{it}, normalization, rho, derivative);
     lambda = optimize(y, W, Z, Q, phi, exp(-9), exp(5), 5e-3);
     [d, c, rhoMLE, ~, M] = kriging(lambda, y, W, Z, Q, phi);
     [m, ~] = prediction(loc_sim, basis{it}, normalization, rho, lambda, Z, Q, phi, M, d, c, rhoMLE);

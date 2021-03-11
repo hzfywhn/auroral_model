@@ -27,15 +27,8 @@ filename_sat <- c("../f16_20140220.nc", "../f17_20140220.nc", "../f18_20140220.n
 # time interval to gather satellite data to one time point (hour)
 coverage <- 1/4
 
-# max time interval to do temporal interpolation
-max_interval <- 1
-
 # ground data files
 filename_grnd <- "../themis20140220.nc"
-
-# ground data thresholds
-flux_thres <- c(0.1, 200)
-energy_thres <- c(0.1, 50)
 
 # select only diffuse aurora in empirical data
 aurtype <- 1
@@ -109,7 +102,7 @@ for (ifile in 2: length(filename_sat)) {
 sat <- grid_satellite(mlat_sat, mlt_sat, ut_sat, flux_sat, energy_sat, time, coverage)
 
 # interpolate satellite data to given time
-interp <- interp_satellite(ut_sat, flux_sat, energy_sat, time, max_interval)
+interp <- interp_satellite(ut_sat, flux_sat, energy_sat, time)
 interp$mlt <- mlt_sat
 interp$mlat <- mlat_sat
 
@@ -121,9 +114,6 @@ mlt_grnd <- ncvar_get(nc = nc, varid = "mlt")
 flux_grnd <- ncvar_get(nc = nc, varid = "flux")
 energy_grnd <- ncvar_get(nc = nc, varid = "energy")
 nc_close(nc = nc)
-
-flux_grnd[flux_grnd < flux_thres[1] | flux_grnd > flux_thres[2]] <- NA
-energy_grnd[energy_grnd < energy_thres[1] | energy_grnd > energy_thres[2]] <- NA
 
 # select ground data at given time
 grnd <- ground(time_grnd, mlat_grnd, mlt_grnd, flux_grnd, energy_grnd, time)
@@ -184,6 +174,7 @@ bndry <- auroral_boundary(x_sat, y_sat, interp$flux, lb, a, b, r)
 # setup basis based on deterministic boundaries
 basis <- setup_basis(bndry, sponge, delta, centerweight, overlap, weight)
 
+nsim <- nmlt_sim * nmlat_sim
 flux_sim <- array(dim = c(nt, nmlt_sim, nmlat_sim))
 energy_sim <- array(dim = c(nt, nmlt_sim, nmlat_sim))
 
@@ -234,26 +225,34 @@ for (it in 1: nt) {
     r <- pi/2 - loc[, 2]*pi/180
     t <- loc[, 1] * pi/12
     loc <- cbind(r*cos(t), r*sin(t))
-    flux <- list(loc = loc, val = log(flux), err = rep(1, times = length(flux)))
-    energy <- list(loc = loc, val = log(energy), err = rep(1, times = length(energy)))
+    Z1 <- rep(1, times = nsim)
+    MR1 <- combineMR(list(loc = loc_sim), basis[[it]], normalization, rho, derivative)
 
-    cons <- constants(flux, basis[[it]], normalization, rho, derivative)
+    n <- length(flux)
+    yfit <- log(flux)
+    W <- diag.spam(x = 1, nrow = n, ncol = n)
+    Z <- rep(1, times = n)
+    MR <- combineMR(list(loc = loc), basis[[it]], normalization, rho, derivative)
     lambda <- exp(optimize(
-        function(l) kriging(exp(l), cons$y, cons$W, cons$Z, cons$Q, cons$phi)$likelihood,
+        function(l) kriging(exp(l), yfit, W, Z, MR$Q, MR$phi)$likelihood,
         interval = c(-9, 5), maximum = TRUE, tol = 5e-3)$maximum)
-    fit <- kriging(lambda, cons$y, cons$W, cons$Z, cons$Q, cons$phi)
-    pred <- prediction(loc_sim, basis[[it]], normalization, rho, lambda, cons$Z, cons$Q, cons$phi, fit$M, fit$d, fit$c, fit$rhoMLE)
+    fit <- kriging(lambda, yfit, W, Z, MR$Q, MR$phi)
+    pred <- prediction(Z1, MR1$phi1, lambda, Z, MR$Q, MR$phi, fit$M, fit$d, fit$c, fit$rhoMLE)
 
     # ggplot(data = data.frame(x = loc[, 1], y = loc[, 2], c = flux$val)) + geom_point(mapping = aes(x, y, colour = c))
     # ggplot(data = data.frame(x = loc_sim[, 1], y = loc_sim[, 2], c = pred$m)) + geom_point(mapping = aes(x, y, colour = c))
     flux_sim[it, , ] <- array(data = exp(pred$m) * prob_flux[it, ], dim = c(nmlt_sim, nmlat_sim))
 
-    cons <- constants(energy, basis[[it]], normalization, rho, derivative)
+    n <- length(energy)
+    yfit <- log(energy)
+    W <- diag.spam(x = 1, nrow = n, ncol = n)
+    Z <- rep(1, times = n)
+    MR <- combineMR(list(loc = loc), basis[[it]], normalization, rho, derivative)
     lambda <- exp(optimize(
-        function(l) kriging(exp(l), cons$y, cons$W, cons$Z, cons$Q, cons$phi)$likelihood,
+        function(l) kriging(exp(l), yfit, W, Z, MR$Q, MR$phi)$likelihood,
         interval = c(-9, 5), maximum = TRUE, tol = 5e-3)$maximum)
-    fit <- kriging(lambda, cons$y, cons$W, cons$Z, cons$Q, cons$phi)
-    pred <- prediction(loc_sim, basis[[it]], normalization, rho, lambda, cons$Z, cons$Q, cons$phi, fit$M, fit$d, fit$c, fit$rhoMLE)
+    fit <- kriging(lambda, yfit, W, Z, MR$Q, MR$phi)
+    pred <- prediction(Z1, MR1$phi1, lambda, Z, MR$Q, MR$phi, fit$M, fit$d, fit$c, fit$rhoMLE)
 
     # ggplot(data = data.frame(x = loc[, 1], y = loc[, 2], c = energy$val)) + geom_point(mapping = aes(x, y, colour = c))
     # ggplot(data = data.frame(x = loc_sim[, 1], y = loc_sim[, 2], c = pred$m)) + geom_point(mapping = aes(x, y, colour = c))

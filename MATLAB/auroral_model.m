@@ -1,10 +1,9 @@
 doy = 51;
 hemi = 'N';
-time = 6: 1/4: 12;
+time = 6: 1/3: 12;
 
 filename_sat = {'../f16_20140220.nc', '../f17_20140220.nc', '../f18_20140220.nc'};
 coverage = 1/4;
-max_interval = 1;
 
 filename_grnd = '../themis20140220.nc';
 
@@ -60,16 +59,13 @@ end
 
 sat = grid_satellite(mlat_sat, mlt_sat, ut_sat, flux_sat, energy_sat, time, coverage);
 
-[interp_flux, interp_energy] = interp_satellite(ut_sat, flux_sat, energy_sat, time, max_interval);
+[interp_flux, interp_energy] = interp_satellite(ut_sat, flux_sat, energy_sat, time);
 
 time_grnd = double(ncread(filename_grnd, 'time')) / 3600;
 mlat_grnd = ncread(filename_grnd, 'mlat');
 mlt_grnd = ncread(filename_grnd, 'mlt');
 flux_grnd = ncread(filename_grnd, 'flux');
 energy_grnd = ncread(filename_grnd, 'energy');
-
-flux_grnd(flux_grnd == 0) = NaN;
-energy_grnd(energy_grnd == 0) = NaN;
 
 [grnd_mlat, grnd_mlt, grnd_flux, grnd_energy] = ground(time_grnd, mlat_grnd, mlt_grnd, flux_grnd, energy_grnd, time);
 
@@ -103,7 +99,7 @@ for it = 1: nt
     [~, score, ~] = predict(fitcknn([x_sat(:) y_sat(:); x_grnd_i(valid) y_grnd_i(valid)], [valid_interp(:); flux_grnd_i(valid) > thres_flux], 'NumNeighbors', KN), loc_sim);
     prob_flux(it, :) = score * [0; 1];
 
-    valid_interp = interp_energy(:, :, it) > thres_flux;
+    valid_interp = interp_energy(:, :, it) > thres_energy;
     energy_grnd_i = energy_grnd(:, :, it);
     valid = ~isnan(energy_grnd_i);
     [~, score, ~] = predict(fitcknn([x_sat(:) y_sat(:); x_grnd_i(valid) y_grnd_i(valid)], [valid_interp(:); energy_grnd_i(valid) > thres_energy], 'NumNeighbors', KN), loc_sim);
@@ -114,8 +110,15 @@ end
 
 basis = setup_basis(am, bm, rmin, rmax, sponge, delta, centerweight, overlap, weight);
 
+nsim = nmlt_sim * nmlat_sim;
 flux_sim = zeros(nt, nmlt_sim, nmlat_sim);
 energy_sim = zeros(nt, nmlt_sim, nmlat_sim);
+
+xmin = exp(-9);
+xmax = exp(5);
+MaxIter = 500;
+MaxFunEvals = 500;
+TolX = 5e-3;
 
 for it = 1: nt
     disp(it)
@@ -165,27 +168,33 @@ for it = 1: nt
     r = pi/2 - deg2rad(loc(:, 2));
     t = loc(:, 1) * pi/12;
     loc = [r.*cos(t) r.*sin(t)];
-    flux = struct('loc', loc, 'val', log(flux), 'err', ones(length(flux), 1));
-    energy = struct('loc', loc, 'val', log(energy), 'err', ones(length(energy), 1));
+    Z1 = ones(nsim, 1);
+    [~, phi1] = combineMR(struct('loc', loc_sim), basis{it}, normalization, rho, derivative);
 
-    y = flux.val;
-    ind = 1: size(flux.val, 1);
-    W = sparse(ind, ind, flux.err);
-    Z = [ones(size(flux.loc, 1), 1) flux.loc];
-    [Q, phi] = combineMR(flux, basis{it}, normalization, rho, derivative);
-    lambda = optimize(y, W, Z, Q, phi, exp(-9), exp(5), 5e-3);
-    [d, c, rhoMLE, ~, M] = kriging(lambda, y, W, Z, Q, phi);
-    [m, ~] = prediction(loc_sim, basis{it}, normalization, rho, lambda, Z, Q, phi, M, d, c, rhoMLE);
+    yfit = log(flux);
+    ind = 1: length(flux);
+    W = sparse(ind, ind, 1);
+    Z = ones(length(flux), 1);
+    [Q, phi] = combineMR(struct('loc', loc), basis{it}, normalization, rho, derivative);
+    [lambda, ~, exitflag, output] = findblup(yfit, W, Z, Q, phi, xmin, xmax, optimset('MaxFunEvals', MaxFunEvals, 'MaxIter', MaxIter, 'TolX', TolX));
+    if exitflag ~= 1 || output.iterations >= MaxIter || output.funcCount >= MaxFunEvals
+        continue
+    end
+    [d, c, rhoMLE, ~, M] = kriging(lambda, yfit, W, Z, Q, phi);
+    [m, ~] = prediction(Z1, phi1, lambda, Z, Q, phi, M, d, c, rhoMLE);
     flux_sim(it, :, :) = reshape(exp(m).*prob_flux(it,:)', nmlt_sim, nmlat_sim);
 
-    y = energy.val;
-    ind = 1: size(energy.val, 1);
-    W = sparse(ind, ind, energy.err);
-    Z = [ones(size(energy.loc, 1), 1) energy.loc];
-    [Q, phi] = combineMR(energy, basis{it}, normalization, rho, derivative);
-    lambda = optimize(y, W, Z, Q, phi, exp(-9), exp(5), 5e-3);
-    [d, c, rhoMLE, ~, M] = kriging(lambda, y, W, Z, Q, phi);
-    [m, ~] = prediction(loc_sim, basis{it}, normalization, rho, lambda, Z, Q, phi, M, d, c, rhoMLE);
+    yfit = log(energy);
+    ind = 1: length(energy);
+    W = sparse(ind, ind, 1);
+    Z = ones(length(energy), 1);
+    [Q, phi] = combineMR(struct('loc', loc), basis{it}, normalization, rho, derivative);
+    [lambda, ~, exitflag, output] = findblup(yfit, W, Z, Q, phi, xmin, xmax, optimset('MaxFunEvals', MaxFunEvals, 'MaxIter', MaxIter, 'TolX', TolX));
+    if exitflag ~= 1 || output.iterations >= MaxIter || output.funcCount >= MaxFunEvals
+        continue
+    end
+    [d, c, rhoMLE, ~, M] = kriging(lambda, yfit, W, Z, Q, phi);
+    [m, ~] = prediction(Z1, phi1, lambda, Z, Q, phi, M, d, c, rhoMLE);
     energy_sim(it, :, :) = reshape(exp(m).*prob_energy(it,:)', nmlt_sim, nmlat_sim);
 end
 
@@ -199,11 +208,3 @@ ncwrite(filename_output, 'mlt', mlt_sim)
 ncwrite(filename_output, 'mlat', mlat_sim)
 ncwrite(filename_output, 'flux', flux_sim)
 ncwrite(filename_output, 'energy', energy_sim)
-
-function lambda = optimize(y, W, Z, Q, phi, xmin, xmax, tol)
-    function likelihood = LK(l)
-        [~, ~, ~, likelihood] = kriging(exp(l), y, W, Z, Q, phi);
-        likelihood = -likelihood;
-    end
-    lambda = exp(fminbnd(@LK, log(xmin), log(xmax), optimset('FunValCheck', 'on', 'TolX', tol)));
-end

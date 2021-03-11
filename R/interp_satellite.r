@@ -1,4 +1,4 @@
-interp_satellite <- function(ut, flux, energy, time, max_interval) {
+interp_satellite <- function(ut, flux, energy, time) {
     nmlat <- nrow(ut)
     nmlt <- ncol(ut)
     nt <- length(time)
@@ -7,21 +7,20 @@ interp_satellite <- function(ut, flux, energy, time, max_interval) {
 
     for (imlat in 1: nmlat) {
         for (imlt in 1: nmlt) {
-            x <- ut[imlat, imlt, ]
-            y1 <- flux[imlat, imlt, ]
-            y2 <- energy[imlat, imlt, ]
-            valid <- !(is.na(x) | is.na(y1) | is.na(y2))
-            x <- x[valid]
-            y1 <- y1[valid]
-            y2 <- y2[valid]
-            if (length(x) >= 2) {
-                ix <- sort(x, index.return = TRUE)$ix
-                x <- x[ix]
+            t <- ut[imlat, imlt, ]
 
-                if (min(diff(x)) < max_interval) {
-                    flux_interp[imlat, imlt, ] <- approx(x = x, y = y1[ix], xout = time)$y
-                    energy_interp[imlat, imlt, ] <- approx(x = x, y = y2[ix], xout = time)$y
-                }
+            f <- flux[imlat, imlt, ]
+            valid <- !(is.na(t) | is.na(f))
+            x <- t[valid]
+            if (length(unique(x)) >= 2) {
+                flux_interp[imlat, imlt, ] <- approx(x = x, y = f[valid], xout = time)$y
+            }
+
+            e <- energy[imlat, imlt, ]
+            valid <- !(is.na(t) | is.na(e))
+            x <- t[valid]
+            if (length(unique(x)) >= 2) {
+                energy_interp[imlat, imlt, ] <- approx(x = x, y = e[valid], xout = time)$y
             }
         }
     }

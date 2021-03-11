@@ -1,4 +1,4 @@
-function [flux_interp, energy_interp] = interp_satellite(ut, flux, energy, time, max_interval)
+function [flux_interp, energy_interp] = interp_satellite(ut, flux, energy, time)
     [nmlat, nmlt, ~] = size(ut);
     nt = length(time);
     flux_interp = NaN(nmlat, nmlt, nt);
@@ -6,17 +6,24 @@ function [flux_interp, energy_interp] = interp_satellite(ut, flux, energy, time,
 
     for imlat = 1: nmlat
         for imlt = 1: nmlt
-            x = squeeze(ut(imlat, imlt, :));
-            y1 = squeeze(flux(imlat, imlt, :));
-            y2 = squeeze(energy(imlat, imlt, :));
-            valid = ~(isnan(x) | isnan(y1) | isnan(y2));
-            x = x(valid);
-            y1 = y1(valid);
-            y2 = y2(valid);
+            t = squeeze(ut(imlat, imlt, :));
+
+            f = squeeze(flux(imlat, imlt, :));
+            valid = ~(isnan(t) | isnan(f));
+            x = t(valid);
+            f = f(valid);
             [x, uniq, ~] = unique(x);
-            if length(x) >= 2 && min(diff(x)) < max_interval
-                flux_interp(imlat, imlt, :) = interp1(x, y1(uniq), time);
-                energy_interp(imlat, imlt, :) = interp1(x, y2(uniq), time);
+            if length(x) >= 2
+                flux_interp(imlat, imlt, :) = interp1(x, f(uniq), time);
+            end
+
+            e = squeeze(energy(imlat, imlt, :));
+            valid = ~(isnan(t) | isnan(e));
+            x = t(valid);
+            e = e(valid);
+            [x, uniq, ~] = unique(x);
+            if length(x) >= 2
+                energy_interp(imlat, imlt, :) = interp1(x, e(uniq), time);
             end
         end
     end

@@ -1,5 +1,5 @@
-from numpy import linspace, loadtxt, concatenate, ndarray, logical_not, logical_and, nan, nanmean, \
-    full, isnan, count_nonzero, argmin, abs, interp, pi, meshgrid, rad2deg, sqrt, arctan2
+from numpy import arange, loadtxt, concatenate, ndarray, logical_not, logical_and, nan, nanmean, full, \
+    isnan, count_nonzero, argsort, argmin, abs, interp, pi, meshgrid, linspace, rad2deg, sqrt, arctan2
 from netCDF4 import Dataset
 from guvi_auroral_model import get_guvi_kp_model
 
@@ -7,8 +7,9 @@ from guvi_auroral_model import get_guvi_kp_model
 caseid = 20140220
 
 # ut to simulate (hour)
-ntime = 145
-time = linspace(start=0, stop=24, num=ntime)
+step = 1/6
+time = arange(start=0, stop=24+step, step=step)
+ntime = len(time)
 
 # satellite code
 code = [16, 17, 18]
@@ -80,6 +81,10 @@ for imlt in range(nmlt_sat):
         ut = ut_sat[valid, imlt, imlat]
         flux = flux_sat[valid, imlt, imlat]
         energy = energy_sat[valid, imlt, imlat]
+        ind = argsort(ut)
+        ut = ut[ind]
+        flux = flux[ind]
+        energy = energy[ind]
         nt = len(ut)
         for itime in range(ntime):
             if time[itime] <= ut[0] or time[itime] >= ut[nt-1]:

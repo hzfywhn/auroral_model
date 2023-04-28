@@ -3,7 +3,17 @@ from numpy import size, ndarray, logical_not, isnan, arange, max
 from random import sample
 
 
+# random downsampling of auroral data from different sources
+# input: full input data containing flux and energy
+# output: downsampled flux or energy
+
+
+hemi = 'north'
+
+# flux or energy
 varname = 'flux'
+
+# designed downsampling ratio for each data source
 ratio = [1, 1, 1/3, 1/20]
 
 src = ['sat', 'grnd', 'interp', 'emp']
@@ -13,7 +23,7 @@ mlat = [None] * nsrc
 mlt = [None] * nsrc
 var = [None] * nsrc
 
-data_in = Dataset(filename='input.nc')
+data_in = Dataset(filename=hemi+'_in.nc')
 time = data_in['time'][:].filled()
 kp = data_in['kp'][:].filled()
 for isrc in range(nsrc):
@@ -38,6 +48,7 @@ var_ds = ndarray(shape=(nsrc, ntime, max_nrec))
 for itime in range(ntime):
     for isrc in range(nsrc):
         if isrc == 1:
+# note that ground data has a different format (varying mlat/mlt with time), dealt separately
             mlat_i = mlat[isrc][itime, :, :]
             mlt_i = mlt[isrc][itime, :, :]
         else:
@@ -56,22 +67,23 @@ for itime in range(ntime):
         if nsample == 0:
             continue
 
+# randomly choose nsample from cnt
         indices = sample(population=list(arange(start=0, stop=cnt, dtype=int)), k=nsample)
         mlat_ds[isrc, itime, 0: nsample] = mlat_i[indices]
         mlt_ds[isrc, itime, 0: nsample] = mlt_i[indices]
         var_ds[isrc, itime, 0: nsample] = var_i[indices]
 max_nrec_ds = max(nrec_ds)
 
-data_out = Dataset(filename=varname+'_in.nc', mode='w')
+data_out = Dataset(filename=hemi+'_'+varname+'_in.nc', mode='w')
 data_out.createDimension(dimname='time', size=ntime)
 data_out.createDimension(dimname='max_nrec', size=max_nrec_ds)
-time_out = data_out.createVariable(varname='time', datatype='d', dimensions='time')
-kp_out = data_out.createVariable(varname='kp', datatype='d', dimensions='time')
+time_out = data_out.createVariable(varname='time', datatype='f4', dimensions='time')
+kp_out = data_out.createVariable(varname='kp', datatype='f4', dimensions='time')
 for isrc in range(nsrc):
-    data_out.createVariable(varname=src[isrc]+'_nrec', datatype='i', dimensions='time')
-    data_out.createVariable(varname=src[isrc]+'_mlat', datatype='d', dimensions=('time', 'max_nrec'))
-    data_out.createVariable(varname=src[isrc]+'_mlt', datatype='d', dimensions=('time', 'max_nrec'))
-    data_out.createVariable(varname=src[isrc]+'_'+varname, datatype='d', dimensions=('time', 'max_nrec'))
+    data_out.createVariable(varname=src[isrc]+'_nrec', datatype='i4', dimensions='time')
+    data_out.createVariable(varname=src[isrc]+'_mlat', datatype='f4', dimensions=('time', 'max_nrec'))
+    data_out.createVariable(varname=src[isrc]+'_mlt', datatype='f4', dimensions=('time', 'max_nrec'))
+    data_out.createVariable(varname=src[isrc]+'_'+varname, datatype='f4', dimensions=('time', 'max_nrec'))
 time_out[:] = time
 kp_out[:] = kp
 for isrc in range(nsrc):

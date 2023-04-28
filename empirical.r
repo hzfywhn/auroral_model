@@ -1,3 +1,6 @@
+# a rewrite of Zhang and Paxton (2008) auroral model in R
+
+
 get_HP <- function(kp) {
     A <- c(16.8244, 0.323365, -4.86128)
     B <- c(1.82336, 0.613192, 26.1798)
@@ -26,6 +29,10 @@ get_fitting_value <- function(t, r, AA, BB) {
 }
 
 get_guvi_kp_model <- function(kp, mlat, mlt) {
+# input: kp, mlat, mlt (of same length)
+# output: energy flux and mean energy
+
+# guvi_auroral_model.nc contains paramters of the auroral model
     nc <- ncdf4::nc_open(filename = 'guvi_auroral_model.nc')
     kp_list <- ncdf4::ncvar_get(nc = nc, varid = "kp")
     AA_flux <- ncdf4::ncvar_get(nc = nc, varid = "AA_flux")
@@ -34,6 +41,7 @@ get_guvi_kp_model <- function(kp, mlat, mlt) {
     BB_energy <- ncdf4::ncvar_get(nc = nc, varid = "BB_energy")
     ncdf4::nc_close(nc = nc)
 
+# simplified kp index calculation
     ida <- which.min(abs(kp_list - kp))
     if (kp_list[ida] > kp) ida <- ida - 1
     idb <- ida + 1

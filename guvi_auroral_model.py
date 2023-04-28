@@ -2,6 +2,9 @@ from numpy import exp, linspace, cos, sin, ndarray, sum, argmin, abs, pi
 from netCDF4 import Dataset
 
 
+# a rewrite of Zhang and Paxton (2008) auroral model in python
+
+
 def get_HP(kp):
     A = [16.8244, 0.323365, -4.86128]
     B = [1.82336, 0.613192, 26.1798]
@@ -30,6 +33,10 @@ def get_fitting_value(t, r, AA, BB):
 
 
 def get_guvi_kp_model(kp, mlat, mlt):
+# input: kp, mlat, mlt (of same length)
+# output: energy flux and mean energy
+
+# guvi_auroral_model.nc contains paramters of the auroral model
     data = Dataset(filename='guvi_auroral_model.nc')
     kp_list = data['kp'][:].filled()
     AA_energy = data['AA_energy'][:].filled()
@@ -38,6 +45,7 @@ def get_guvi_kp_model(kp, mlat, mlt):
     BB_flux = data['BB_flux'][:].filled()
     data.close()
 
+# simplified kp index calculation
     ida = argmin(abs(kp_list - kp))
     if kp_list[ida] > kp:
         ida -= 1

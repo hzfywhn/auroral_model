@@ -9,9 +9,9 @@ from datetime import date
 # output: combined SSUSI data from one single satellite
 
 
-Year = 2015
-Month = 3
-Day = 17
+Year = 2014
+Month = 2
+Day = 20
 code = 16
 
 files = glob(pathname='f{0:d}/PS.APL_V0105S027C?00??_SC.U_DI.A_GP.F{0:d}-SSUSI_PA.APL-EDR-AURORA_DD.????????_SN.?????-0?_DF.NC'.format(code))

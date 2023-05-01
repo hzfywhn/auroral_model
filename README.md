@@ -3,6 +3,7 @@ Spatial modeling of aurora using Lattice Kriging
 Before running the code, you should have:
 1. SSUSI auroral EDR data grouped by the satellite code, this can be found at https://ssusi.jhuapl.edu/data_availability?type=edr-aur
 2. THEMIS data with derived energy flux and characteristic energy as Gabrielse et al. (2021), contact UCLA THEMIS group for the required data
+3. Kp index required for the Zhang and Paxton (2008) model can be obtained from SPDF OMNIWeb (https://omniweb.gsfc.nasa.gov/)
 
 Then run codes in the following sequence:
 1. combine_ssusi, to combine all orbits from one single satellite (f17_20140220.nc)

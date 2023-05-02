@@ -40,9 +40,6 @@ flux_label <- 2
 # parameter for KNN, only used for calculating post-processing weights
 K <- 10
 
-# number of points to be estimated along each side in the modeling domain
-nxy <- 401
-
 # read input data, definitions of variables are given in prepare_input.py
 src <- c("sat", "grnd", "interp", "emp")
 nsrc <- length(src)
@@ -99,6 +96,9 @@ centerweight <- 4.01
 
 # initial guesss of the marginal variance, will be re-estimated later
 rho <- 1
+
+# number of points to be estimated along each side in the modeling domain
+nxy <- 401
 
 # create the grid to be predicted
 xy <- seq(from = -range, to = range, length.out = nxy)

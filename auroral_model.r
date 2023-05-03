@@ -1,6 +1,5 @@
 source(file = "empirical.r")
 source(file = "LatticeKriging.r")
-library(package = "spam64")
 
 # predict auroral energy flux and mean energy based on satellite and ground observations
 

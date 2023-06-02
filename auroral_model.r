@@ -12,7 +12,7 @@ varname <- "flux"
 res <- 5
 
 # input and output files
-input <- paste(hemi, varname, "in.nc", sep = "_")
+input <- paste(hemi, varname, "nz.nc", sep = "_")
 output <- paste(hemi, "_", varname, "_out_", res, "d.nc", sep = "")
 
 # whether mean will be calculated
@@ -135,12 +135,6 @@ for (itime in 1: ntime) {
     mlt_i <- unlist(mlt_i)
     var_i <- unlist(var_i)
     err_i <- unlist(err_i)
-
-# remove 0
-    valid <- var_i > 0
-    coor <- cbind(mlat_i[valid], mlt_i[valid])
-    var_i <- var_i[valid]
-    err_i <- err_i[valid]
 
 # remove duplicate
     valid <- !duplicated(coor)

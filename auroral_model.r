@@ -136,15 +136,10 @@ for (itime in 1: ntime) {
     var_i <- unlist(var_i)
     err_i <- unlist(err_i)
 
-# remove duplicate
-    valid <- !duplicated(coor)
-    mlat_i <- coor[valid, 1]
-    mlt_i <- coor[valid, 2]
+# from geomagnetic coordinates to model coordinates
     r <- pi/2 - mlat_i*pi/180
     t <- mlt_i * pi/12
     loc <- cbind(r*cos(t), r*sin(t))
-    var_i <- var_i[valid]
-    err_i <- err_i[valid]
 
 # empirical model as background model
     emp <- get_guvi_kp_model(kp[itime], mlat_i, mlt_i)
